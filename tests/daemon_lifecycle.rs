@@ -6,89 +6,12 @@
 //! can run concurrently and never touch a real `~/Library/Application
 //! Support/runner/`.
 
-use std::path::{Path, PathBuf};
+mod common;
+
 use std::process::Command;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
-fn unique_runner_home(label: &str) -> PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let dir =
-        std::env::temp_dir().join(format!("runner-it-{label}-{}-{nanos}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("failed to create isolated RUNNER_HOME for test");
-    dir
-}
-
-fn runner_cmd(runner_home: &Path) -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_runner"));
-    cmd.env("RUNNER_HOME", runner_home);
-    cmd
-}
-
-fn pid_file_path(runner_home: &Path) -> PathBuf {
-    runner_home.join("runner.pid")
-}
-
-fn read_pid(runner_home: &Path) -> Option<i32> {
-    std::fs::read_to_string(pid_file_path(runner_home))
-        .ok()
-        .and_then(|s| s.trim().parse().ok())
-}
-
-/// Waits for the pid file to appear (with real headroom for concurrent test
-/// load, since each test forks/daemonizes a real OS process) and returns
-/// the pid, failing clearly rather than falling through to a confusing
-/// downstream panic if it never shows up.
-fn wait_for_pid_file(runner_home: &Path) -> i32 {
-    let appeared = wait_until(Duration::from_secs(5), || {
-        pid_file_path(runner_home).exists()
-    });
-    assert!(
-        appeared,
-        "pid file at {} should appear within 5s of `daemon start`",
-        pid_file_path(runner_home).display()
-    );
-    read_pid(runner_home).expect("pid file exists but its content did not parse as a pid")
-}
-
-fn process_alive(pid: i32) -> bool {
-    unsafe { libc::kill(pid, 0) == 0 }
-}
-
-/// Waits (bounded) for a condition to become true — used instead of a fixed
-/// sleep so tests aren't flaky on a slow CI box but also don't wait longer
-/// than necessary.
-fn wait_until(timeout: Duration, mut cond: impl FnMut() -> bool) -> bool {
-    let deadline = Instant::now() + timeout;
-    while Instant::now() < deadline {
-        if cond() {
-            return true;
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    cond()
-}
-
-/// Best-effort cleanup so a failing assertion never leaks a real running
-/// daemon (and its caffeinate child) on the machine running the tests.
-fn force_stop(runner_home: &Path) {
-    if let Some(pid) = read_pid(runner_home) {
-        unsafe {
-            libc::kill(pid, libc::SIGTERM);
-        }
-        wait_until(Duration::from_secs(5), || !process_alive(pid));
-    }
-}
-
-fn caffeinate_available() -> bool {
-    Command::new("which")
-        .arg("caffeinate")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-}
+use common::*;
 
 // --- AC-05: status reports "stopped" before anything has ever run ---
 #[test]

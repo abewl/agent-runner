@@ -1,11 +1,12 @@
-//! `runner daemon start|stop|status` command implementations (F-01).
+//! `runner daemon start|stop|status` command implementations (F-01, F-02).
 
 use std::fs::OpenOptions;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use daemonize::Daemonize;
 
-use crate::{paths, pid};
+use crate::{config, paths, pid};
 
 const STOP_TIMEOUT: Duration = Duration::from_secs(5);
 const STOP_POLL_INTERVAL: Duration = Duration::from_millis(100);
@@ -18,8 +19,16 @@ const STOP_POLL_INTERVAL: Duration = Duration::from_millis(100);
 /// the shell immediately (SPEC.md F-01 AC-02). Only the detached child
 /// continues past `.start()` — from its point of view this function runs
 /// the daemon body and returns once the daemon has shut down.
-pub fn start() -> Result<(), String> {
+///
+/// `repo`, when given (`--repo <path>`), is validated and persisted via
+/// `config::set_repo_path` *before* anything else — a validation failure
+/// must prevent the daemon from starting at all (SPEC.md F-02 AC-03).
+pub fn start(repo: Option<PathBuf>) -> Result<(), String> {
     paths::ensure_runner_home().map_err(|e| format!("failed to create RUNNER_HOME: {e}"))?;
+
+    if let Some(repo_path) = repo {
+        config::set_repo_path(&repo_path)?;
+    }
 
     let pid_path = paths::pid_file();
 

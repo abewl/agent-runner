@@ -7,6 +7,15 @@
 use std::io;
 use std::path::PathBuf;
 
+/// Shared across every test module that mutates the process-global
+/// `RUNNER_HOME` env var (currently `paths::tests` and `config::tests`) —
+/// a per-module lock does *not* serialize against a different module's own
+/// lock, so this has to be the one and only lock any such test uses, or
+/// two tests in different modules can race on the same env var under
+/// parallel test execution.
+#[cfg(test)]
+pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Base data directory. Default `~/Library/Application Support/runner/`,
 /// overridable via `RUNNER_HOME`.
 pub fn runner_home() -> PathBuf {
@@ -42,10 +51,6 @@ pub fn ensure_runner_home() -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
-
-    // std::env::set_var affects the whole process; serialize tests that touch it.
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn runner_home_respects_env_override() {

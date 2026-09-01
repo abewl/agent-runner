@@ -1,6 +1,9 @@
+use std::path::PathBuf;
+
 use clap::{Parser, Subcommand};
 
 mod cli;
+mod config;
 mod daemon;
 mod paths;
 mod pid;
@@ -19,16 +22,33 @@ enum Commands {
         #[command(subcommand)]
         action: DaemonAction,
     },
+    /// Manage the configured target repo
+    Repo {
+        #[command(subcommand)]
+        action: RepoAction,
+    },
 }
 
 #[derive(Subcommand)]
 enum DaemonAction {
     /// Start the daemon (detaches into the background)
-    Start,
+    Start {
+        /// Set the target repo before starting (equivalent to `runner repo set` first)
+        #[arg(long)]
+        repo: Option<PathBuf>,
+    },
     /// Stop the running daemon
     Stop,
     /// Report whether the daemon is running
     Status,
+}
+
+#[derive(Subcommand)]
+enum RepoAction {
+    /// Set the target repo (must contain agent_docs/AGENT.md)
+    Set { path: PathBuf },
+    /// Show the currently configured target repo
+    Show,
 }
 
 fn main() {
@@ -36,9 +56,13 @@ fn main() {
 
     let result = match cli.command {
         Commands::Daemon { action } => match action {
-            DaemonAction::Start => cli::daemon::start(),
+            DaemonAction::Start { repo } => cli::daemon::start(repo),
             DaemonAction::Stop => cli::daemon::stop(),
             DaemonAction::Status => cli::daemon::status(),
+        },
+        Commands::Repo { action } => match action {
+            RepoAction::Set { path } => cli::repo::set(&path),
+            RepoAction::Show => cli::repo::show(),
         },
     };
 

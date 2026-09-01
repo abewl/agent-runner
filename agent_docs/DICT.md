@@ -167,3 +167,11 @@ macOS-only. If `caffeinate` isn't on `PATH` (i.e. anywhere other than macOS), th
 ## TUI is read-only
 
 No store-mutating function (anything in `store/runs.rs` or `store/schedules.rs` beyond read/list) is ever called from `src/tui/`. This is a structural rule, not just a behavioral one — F-15 AC-04 expects it to be verifiable by inspection of what the TUI module can reach, not just by testing.
+
+---
+
+## Testing conventions (F-01, F-02)
+
+- **Integration tests share `tests/common/mod.rs`.** (Named `common/mod.rs`, not `common.rs`, specifically so Cargo treats it as a shared module rather than compiling it as its own empty test binary.) Any new integration test file that needs to spawn the compiled binary against an isolated `RUNNER_HOME`, wait for a pid file, or force-stop a leaked daemon should `mod common; use common::*;` rather than re-deriving these helpers — F-01 and F-02 originally each had their own copy, which is exactly the kind of drift this file exists to prevent.
+- **Unit tests that mutate `RUNNER_HOME` (or any other process-global env var) must all share one lock, not one per module.** `paths::ENV_LOCK` (`#[cfg(test)] pub(crate)`, defined once in `paths.rs`) is that lock — `config::tests` imports it via `use crate::paths::ENV_LOCK` rather than declaring its own. A per-module `static ENV_LOCK: Mutex<()>` looks like it serializes access, but two independent mutexes don't protect each other: under `cargo test`'s default parallel execution, a `paths::tests` test and a `config::tests` test each holding their *own* lock can still race on the same real env var at the same time. This was a real, repeatably-triggered flake before the fix, not a hypothetical.
+- **When polling for a file another process just wrote, poll the parse, not the existence.** `wait_for_pid_file` (in `tests/common/mod.rs`) checks-and-reads in one step rather than `.exists()` followed by a separate read — `std::fs::write` creates/truncates the file before its content lands, so a reader can observe it present-but-empty in between. This was also a real, repeatably-triggered flake, caught the same way as the one above: by running the suite many times in a row, not by inspection. Any future polling helper that waits on another process's file write should follow the same shape.
