@@ -50,6 +50,9 @@ pub fn create(conn: &Connection, new_schedule: &NewSchedule) -> Result<(), Store
     Ok(())
 }
 
+// `read`/`update_last_run_at` aren't called from production code yet —
+// F-14 (the in-daemon tick engine) is their first real consumer.
+#[allow(dead_code)]
 pub fn read(conn: &Connection, id: &str) -> Result<Option<Schedule>, StoreError> {
     conn.query_row(
         &format!("SELECT {SELECT_COLUMNS} FROM schedules WHERE id = ?1"),
@@ -69,6 +72,7 @@ pub fn list(conn: &Connection) -> Result<Vec<Schedule>, StoreError> {
         .map_err(StoreError::from)
 }
 
+#[allow(dead_code)]
 pub fn update_last_run_at(
     conn: &Connection,
     id: &str,

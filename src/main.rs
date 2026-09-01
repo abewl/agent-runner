@@ -4,6 +4,7 @@ use clap::{Parser, Subcommand};
 
 mod cli;
 mod config;
+mod cron_engine;
 mod daemon;
 mod lookup;
 mod paths;
@@ -45,6 +46,11 @@ enum Commands {
     },
     /// Show the full result/failure detail and continuation signal for one run
     Logs { run_id: String },
+    /// Manage cron-style schedules
+    Cron {
+        #[command(subcommand)]
+        action: CronAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -69,6 +75,16 @@ enum RepoAction {
     Show,
 }
 
+#[derive(Subcommand)]
+enum CronAction {
+    /// Add a schedule (standard 5-field cron expression)
+    Add { cron_expr: String, task: String },
+    /// List all schedules
+    List,
+    /// Remove a schedule by id
+    Remove { schedule_id: String },
+}
+
 fn main() {
     let cli = Cli::parse();
 
@@ -85,6 +101,11 @@ fn main() {
         Commands::Run { task } => cli::run::run(&task),
         Commands::Status { running } => cli::status::status(running),
         Commands::Logs { run_id } => cli::logs::logs(&run_id),
+        Commands::Cron { action } => match action {
+            CronAction::Add { cron_expr, task } => cli::cron::add(&cron_expr, &task),
+            CronAction::List => cli::cron::list(),
+            CronAction::Remove { schedule_id } => cli::cron::remove(&schedule_id),
+        },
     };
 
     if let Err(err) = result {

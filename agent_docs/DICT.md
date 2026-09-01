@@ -54,7 +54,7 @@ No workspace, no sub-crates — single binary crate, matching the "thin" project
 | Subprocess | `std::process::Command` / `tokio::process::Command` | Plain piped subprocess — **no PTY** (`portable-pty` is explicitly not a dependency; there is no interactive terminal to emulate). |
 | Local DB | `rusqlite`, `bundled` feature | Embedded SQLite, no external SQLite install required, single-file store. |
 | Config file | `toml` + `serde` | `$RUNNER_HOME/config.toml` — currently just `repo_path`; keep it a flat, small file, not a DB table, for a value this size. |
-| Cron parsing | `cron` crate | Standard 5-field cron expression parsing/evaluation. |
+| Cron parsing | `cron` crate | Runner's own user-facing syntax is standard 5-field, but the crate itself requires a leading seconds field (6–7 fields) — verified empirically, see `src/cron_engine.rs`'s doc comment. Runner prepends a fixed `"0 "` internally; never exposed to callers. |
 | Time | `chrono` (or `time`, pick one and use it everywhere — do not mix) | Timestamps stored as ISO-8601 TEXT in SQLite (see Local State Store, F-07). |
 | Logging | `tracing` + `tracing-subscriber` | Same choice Herdr made. |
 | Daemonize (fork/detach) | `daemonize` | Handles the double-fork/setsid dance correctly (F-01). Its own `.pid_file()` option is deliberately **not used** — see "Signal handlers before pid file" above; we write the pid file ourselves, later, from inside `daemon.rs`. |

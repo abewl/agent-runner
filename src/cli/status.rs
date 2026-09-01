@@ -2,6 +2,7 @@
 
 use chrono::{DateTime, Utc};
 
+use crate::cli::display::truncate;
 use crate::store::runs;
 
 const DEFAULT_LIST_LIMIT: i64 = 50;
@@ -41,15 +42,6 @@ pub fn status(running_only: bool) -> Result<(), String> {
     Ok(())
 }
 
-fn truncate(s: &str, max: usize) -> String {
-    if s.chars().count() > max {
-        let truncated: String = s.chars().take(max.saturating_sub(1)).collect();
-        format!("{truncated}…")
-    } else {
-        s.to_string()
-    }
-}
-
 /// `started_at`/`ended_at` are RFC3339 strings (SPEC.md's "TEXT ISO-8601"
 /// columns). Duration is `ended_at - started_at` for a terminal run, or
 /// `now - started_at` (elapsed so far) for one still `running`. Falls back
@@ -83,19 +75,6 @@ fn format_seconds(total: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn truncate_leaves_short_strings_untouched() {
-        assert_eq!(truncate("short", 40), "short");
-    }
-
-    #[test]
-    fn truncate_shortens_long_strings_with_an_ellipsis() {
-        let long = "x".repeat(50);
-        let truncated = truncate(&long, 40);
-        assert_eq!(truncated.chars().count(), 40);
-        assert!(truncated.ends_with('…'));
-    }
 
     #[test]
     fn format_seconds_under_a_minute() {
