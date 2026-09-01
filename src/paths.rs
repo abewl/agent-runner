@@ -33,6 +33,10 @@ pub fn pid_file() -> PathBuf {
     runner_home().join("runner.pid")
 }
 
+pub fn db_file() -> PathBuf {
+    runner_home().join("runner.db")
+}
+
 pub fn log_dir() -> PathBuf {
     runner_home().join("logs")
 }
@@ -87,6 +91,10 @@ mod tests {
         assert_eq!(
             log_file(),
             PathBuf::from("/tmp/runner-test-derived/logs/runner.log")
+        );
+        assert_eq!(
+            db_file(),
+            PathBuf::from("/tmp/runner-test-derived/runner.db")
         );
         unsafe {
             std::env::remove_var("RUNNER_HOME");

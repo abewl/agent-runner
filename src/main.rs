@@ -18,6 +18,8 @@ mod process;
 mod retry;
 #[allow(dead_code)]
 mod signal;
+#[allow(dead_code)]
+mod store;
 
 #[derive(Parser)]
 #[command(name = "runner", version, about = "Thin local agent-run daemon")]
