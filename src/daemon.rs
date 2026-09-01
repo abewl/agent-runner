@@ -46,6 +46,11 @@ async fn async_main() {
 
     spawn_caffeinate();
 
+    // The daemon's only responsibility in Stage 1 beyond staying alive
+    // (F-14) — runs concurrently with the shutdown wait below, not
+    // inside it; nothing here blocks signal handling.
+    tokio::spawn(crate::cron_engine::run_tick_loop());
+
     tokio::select! {
         _ = sigterm.recv() => { tracing::info!("received SIGTERM"); }
         _ = sigint.recv() => { tracing::info!("received SIGINT"); }

@@ -164,6 +164,10 @@ No `panic!`, `unwrap()`, or `expect()` on any path reachable from a subprocess s
 
 Fixed at 60 seconds (F-14 AC-01), not configurable in this batch. Don't add a config flag for it speculatively — if a use case needs finer granularity later, that's a deliberate follow-up feature, not a default to guess now. This is a different number from `recheck_after` — the tick interval is how often the daemon *checks* whether any schedule is due at all; `recheck_after` is a per-task hint for *skipping* a due tick. Don't conflate the two in implementation.
 
+## Cron due-check: `after()`, never `includes()` (F-14)
+
+The `cron` crate's `Schedule::includes(date_time)` looks like the obvious way to check "is this schedule due right now" — it isn't, for a polling daemon. `includes` requires an *exact second match*, and every expression Runner accepts is internally fixed to `:00` seconds (F-13's `"0 "` prepend). A tick that runs a few seconds after the minute mark — routine, not drift worth caring about — would make `includes(now)` wrongly report "not due." Verified empirically with a scratch probe simulating that jitter before writing any real code. The correct check, used by `cron_engine::is_due`, is `schedule.after(&reference_time).next() <= now` — "was there a scheduled fire time somewhere in the window since I last checked," which is what a poll-based tick actually needs, not "does this exact instant match."
+
 ---
 
 ## Sleep prevention (`caffeinate`, F-01)

@@ -41,7 +41,7 @@ Epics are the layer between `PROJECT.md` (the requirements) and `FEATURE.md` (th
 - Depends on: E-01, E-02
 
 ## E-04: Scheduler (Cron) [2026-08-30]
-- Status: [~] in progress
+- Status: [x] done
 - Objective: Built-in cron-style scheduling — persisted schedule definitions, CLI CRUD for them, and the daemon-internal tick loop that evaluates and fires them through the same run pipeline manual commands use, guarded against overlapping runs of the same schedule and against firing a tick whose last `recheck_after` hint hasn't elapsed yet.
 - Features: F-13, F-14
 - Depends on: E-01, E-02, E-03 (reuses the run pipeline E-03 exercises manually)
