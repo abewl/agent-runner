@@ -113,6 +113,7 @@ mod tests {
             "idle",
             "nothing left to do",
             None,
+            "the result text",
         )
         .unwrap();
 
@@ -148,6 +149,7 @@ mod tests {
             "idle",
             "",
             None,
+            "the result text",
         )
         .unwrap();
 
@@ -182,6 +184,7 @@ mod tests {
             "continue_engineer",
             "more to do",
             None,
+            "the result text",
         )
         .unwrap();
 
@@ -226,6 +229,7 @@ mod tests {
             "idle",
             "",
             None,
+            "the result text",
         )
         .unwrap();
 

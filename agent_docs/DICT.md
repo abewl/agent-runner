@@ -26,7 +26,7 @@ src/
   runner.rs         — the "run one claude turn" pipeline (preflight → continuation lookup → subprocess → signal parse → retry → persist)
   preflight.rs      — F-03 ambient-auth check
   process.rs        — F-04 claude subprocess spawn + result/session/cost parsing
-  signal.rs         — F-05 continuation-signal trailer: prompt-template construction + NEXT_ACTION/RECHECK_AFTER parsing
+  signal.rs         — F-05 continuation-signal trailer: prompt-template construction + NEXT_ACTION/RECHECK_AFTER parsing, plus strip_trailer (F-12) for display/storage contexts that show the parsed signal separately
   store/
     mod.rs           — F-07 SQLite init/migration + shared connection handling
     runs.rs          — typed CRUD for the `runs` table
@@ -97,6 +97,10 @@ Two distinct concepts — do not conflate:
 ## `runs.owner_pid` (F-08, corrects F-07's original column list)
 
 F-07's schema didn't include a per-row process owner. F-08's startup reconciliation (SPEC.md AC-04) needs one: reconciling "any `running` row whose owning process is confirmed not alive" only works if you can tell *which* process owns a row — otherwise a concurrently active daemon tick's legitimately-in-flight run looks identical to one abandoned by a dead process, and a separate `runner status` invocation running reconciliation would wrongly mark it interrupted. `owner_pid INTEGER NOT NULL DEFAULT 0` was added directly to F-07's `CREATE TABLE` statement (schema version bumped 1→2 — no `ALTER TABLE` path, since Stage 1 has never shipped, so no real `runner.db` exists anywhere with the old shape to migrate). `persist::reconcile_interrupted_runs` checks each row's `owner_pid` via `pid::process_alive` individually, never treats "found a `running` row" alone as sufficient.
+
+## `runs.result_text` (F-12, a second correction to F-07's original column list)
+
+F-07's schema also never included anywhere to store the agent's actual response text — only the signal fields (`next_action`/`next_action_reason`/`recheck_after`) and metadata (`session_id`/`cost_usd`) were persisted. This made F-12's own AC-01 ("`runner logs` prints the full result text on success") unimplementable until `result_text TEXT` was added (schema version bumped 2→3, same "edit the `CREATE TABLE` directly, no real DB exists yet to migrate" reasoning as `owner_pid`). Stored **stripped** of the `NEXT_ACTION`/`RECHECK_AFTER` trailer via `signal::strip_trailer` — those fields already have their own columns, so the stored text and the signal fields don't duplicate each other, and `runner run`'s immediate stdout (F-10) and `runner logs`'s later retrieval (F-12) show identical clean text from the one shared stripping function rather than two independent copies. **Two schema gaps found in exactly this way (F-08, F-12) is worth noticing as a pattern**: F-07's original column list was authored during Stage 1 scoping, before any feature that actually *needed* to read specific data back out had been implemented — each gap was found by writing the feature that needed the missing column, not by reviewing the schema in isolation. If a future feature hits the same kind of wall, adding the column directly (not a formal migration) remains correct only as long as Stage 1 has never shipped with real user data.
 
 ---
 

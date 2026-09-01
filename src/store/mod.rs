@@ -14,11 +14,16 @@ pub mod schedules;
 /// Bumped whenever the schema changes. `CREATE TABLE IF NOT EXISTS` is what
 /// actually makes `migrate` idempotent; `user_version` is set defensively
 /// so a future migration has a version to branch on, not because anything
-/// reads it yet. v2 (F-08) added `runs.owner_pid` directly to the `CREATE
-/// TABLE` statement below rather than an `ALTER TABLE` migration path —
-/// safe and correct only because Stage 1 has never been released, so no
-/// real `runner.db` exists anywhere with the v1 shape to migrate from.
-const SCHEMA_VERSION: i64 = 2;
+/// reads it yet. Every bump so far has edited the `CREATE TABLE` statement
+/// directly rather than an `ALTER TABLE` migration path — safe and correct
+/// only because Stage 1 has never been released, so no real `runner.db`
+/// exists anywhere with an older shape to migrate from:
+///   - v2 (F-08): added `runs.owner_pid`.
+///   - v3 (F-12): added `runs.result_text` — F-07's original column list
+///     never included anywhere to store the actual claude response text,
+///     making "print the full result on success" (F-12 AC-01) literally
+///     unimplementable until this was added. See `DICT.md`.
+const SCHEMA_VERSION: i64 = 3;
 
 #[derive(Debug)]
 pub enum StoreError {
@@ -79,7 +84,8 @@ pub(crate) fn migrate(conn: &Connection) -> Result<(), StoreError> {
             next_action TEXT,
             next_action_reason TEXT,
             recheck_after TEXT,
-            owner_pid INTEGER NOT NULL DEFAULT 0
+            owner_pid INTEGER NOT NULL DEFAULT 0,
+            result_text TEXT
         );
 
         CREATE TABLE IF NOT EXISTS schedules (

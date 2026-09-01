@@ -35,13 +35,13 @@ Epics are the layer between `PROJECT.md` (the requirements) and `FEATURE.md` (th
 - Depends on: E-01 (persists the outcome of E-01's run pipeline)
 
 ## E-03: CLI Manual Control [2026-08-30]
-- Status: [~] in progress
+- Status: [x] done
 - Objective: The user-facing commands for triggering and inspecting runs by hand — `runner run`, `runner status`/`ps`, `runner logs`. These operate directly against the Stage 1 local store; none of them require the daemon to be running.
 - Features: F-10, F-11, F-12
 - Depends on: E-01, E-02
 
 ## E-04: Scheduler (Cron) [2026-08-30]
-- Status: [ ] scoping
+- Status: [~] in progress
 - Objective: Built-in cron-style scheduling — persisted schedule definitions, CLI CRUD for them, and the daemon-internal tick loop that evaluates and fires them through the same run pipeline manual commands use, guarded against overlapping runs of the same schedule and against firing a tick whose last `recheck_after` hint hasn't elapsed yet.
 - Features: F-13, F-14
 - Depends on: E-01, E-02, E-03 (reuses the run pipeline E-03 exercises manually)

@@ -88,6 +88,15 @@ fn run_and_persist_using(
                 .recheck_after
                 .map(|d| (Utc::now() + d).to_rfc3339());
 
+            // Stored stripped of the NEXT_ACTION/RECHECK_AFTER trailer
+            // (crate::signal::strip_trailer) — those fields already have
+            // their own columns; keeping them duplicated inside the
+            // stored text too would just be clutter, and F-12's `runner
+            // logs` and F-10's immediate stdout would otherwise need to
+            // strip it themselves independently instead of sharing one
+            // already-clean value.
+            let result_text = crate::signal::strip_trailer(&outcome.result.result);
+
             runs::mark_done(
                 conn,
                 &id,
@@ -98,6 +107,7 @@ fn run_and_persist_using(
                 &outcome.signal.next_action,
                 &outcome.signal.reason,
                 recheck_after.as_deref(),
+                &result_text,
             )?;
 
             Ok(outcome)
@@ -180,6 +190,32 @@ mod tests {
         assert!(row.recheck_after.is_some());
         assert!(row.ended_at.is_some());
         assert_eq!(row.owner_pid, std::process::id() as i64);
+        assert_eq!(row.result_text, Some("some result text".to_string()));
+    }
+
+    #[test]
+    fn result_text_is_stored_stripped_of_the_trailer() {
+        let conn = open_in_memory();
+        run_and_persist_using(&conn, "t", "task", || {
+            Ok(RunOutcome {
+                result: ClaudeResult {
+                    result: "Actual answer.\n\nNEXT_ACTION: idle — done\nRECHECK_AFTER: 30m"
+                        .to_string(),
+                    session_id: Some("sess".to_string()),
+                    cost_usd: 0.0,
+                },
+                signal: ContinuationSignal {
+                    next_action: "idle".to_string(),
+                    reason: "done".to_string(),
+                    recheck_after: Some(Duration::from_secs(1800)),
+                },
+                retried: false,
+            })
+        })
+        .unwrap();
+
+        let row = runs::list(&conn, 1).unwrap().into_iter().next().unwrap();
+        assert_eq!(row.result_text, Some("Actual answer.".to_string()));
     }
 
     #[test]

@@ -41,8 +41,11 @@ pub fn run(task: &str) -> Result<(), String> {
     // stored text — that's not its job). Printing both the raw text and
     // the separately-parsed signal would show the trailer twice; strip it
     // from the displayed body and print the parsed signal once, cleanly,
-    // as a status footer instead.
-    println!("{}", strip_trailer_lines(&outcome.result.result));
+    // as a status footer instead. `signal::strip_trailer` is the same
+    // function F-08's persistence layer uses before storing `result_text`,
+    // so `runner run`'s immediate output and `runner logs`'s later
+    // retrieval show identical, clean text.
+    println!("{}", signal::strip_trailer(&outcome.result.result));
     println!(
         "NEXT_ACTION: {} — {}",
         outcome.signal.next_action, outcome.signal.reason
@@ -52,48 +55,4 @@ pub fn run(task: &str) -> Result<(), String> {
     }
 
     Ok(())
-}
-
-fn strip_trailer_lines(text: &str) -> String {
-    text.lines()
-        .filter(|line| {
-            let trimmed = line.trim();
-            !trimmed.starts_with("NEXT_ACTION:") && !trimmed.starts_with("RECHECK_AFTER:")
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-        .trim_end()
-        .to_string()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn strip_trailer_lines_removes_both_lines() {
-        let text = "Here is my answer.\n\nNEXT_ACTION: idle — done\nRECHECK_AFTER: 30m";
-        assert_eq!(strip_trailer_lines(text), "Here is my answer.");
-    }
-
-    #[test]
-    fn strip_trailer_lines_handles_next_action_only() {
-        let text = "Just this.\nNEXT_ACTION: idle — done";
-        assert_eq!(strip_trailer_lines(text), "Just this.");
-    }
-
-    #[test]
-    fn strip_trailer_lines_leaves_text_without_a_trailer_untouched() {
-        let text = "No trailer here at all.";
-        assert_eq!(strip_trailer_lines(text), text);
-    }
-
-    #[test]
-    fn strip_trailer_lines_only_matches_line_starts_not_substrings() {
-        let text =
-            "A sentence that mentions NEXT_ACTION: in passing, mid-line.\nNEXT_ACTION: idle — done";
-        let stripped = strip_trailer_lines(text);
-        assert!(stripped.contains("mentions NEXT_ACTION:"));
-        assert!(!stripped.contains("idle — done"));
-    }
 }

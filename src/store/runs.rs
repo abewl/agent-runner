@@ -68,6 +68,12 @@ pub struct Run {
     /// concurrently-running daemon tick could easily leave a legitimate
     /// one for a `runner status` invocation to see. See `DICT.md`.
     pub owner_pid: i64,
+    /// The agent's raw response text on a successful run — added in F-12
+    /// (not part of F-07's original column list, which had nowhere at all
+    /// to store this, making "print the full result" unimplementable
+    /// until now). `None` for `running`/`failed`/`interrupted` rows. See
+    /// `DICT.md`.
+    pub result_text: Option<String>,
 }
 
 pub struct NewRun<'a> {
@@ -78,7 +84,7 @@ pub struct NewRun<'a> {
     pub owner_pid: i64,
 }
 
-const SELECT_COLUMNS: &str = "id, task_identity, task, status, session_id, cost_usd, started_at, ended_at, exit_reason, retry_count, next_action, next_action_reason, recheck_after, owner_pid";
+const SELECT_COLUMNS: &str = "id, task_identity, task, status, session_id, cost_usd, started_at, ended_at, exit_reason, retry_count, next_action, next_action_reason, recheck_after, owner_pid, result_text";
 
 fn row_to_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<Run> {
     let status_str: String = row.get(3)?;
@@ -104,6 +110,7 @@ fn row_to_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<Run> {
         next_action_reason: row.get(11)?,
         recheck_after: row.get(12)?,
         owner_pid: row.get(13)?,
+        result_text: row.get(14)?,
     })
 }
 
@@ -139,9 +146,10 @@ pub fn mark_done(
     next_action: &str,
     next_action_reason: &str,
     recheck_after: Option<&str>,
+    result_text: &str,
 ) -> Result<(), StoreError> {
     conn.execute(
-        "UPDATE runs SET status='done', session_id=?2, cost_usd=?3, ended_at=?4, retry_count=?5, next_action=?6, next_action_reason=?7, recheck_after=?8 WHERE id=?1",
+        "UPDATE runs SET status='done', session_id=?2, cost_usd=?3, ended_at=?4, retry_count=?5, next_action=?6, next_action_reason=?7, recheck_after=?8, result_text=?9 WHERE id=?1",
         params![
             id,
             session_id,
@@ -150,7 +158,8 @@ pub fn mark_done(
             retry_count,
             next_action,
             next_action_reason,
-            recheck_after
+            recheck_after,
+            result_text
         ],
     )?;
     Ok(())
@@ -173,12 +182,6 @@ pub fn mark_failed(
     Ok(())
 }
 
-// `read`/`list` aren't called from production code yet — F-11 (`runner
-// status`/`ps`) and F-12 (`runner logs`) are their first real consumers.
-// Already exercised heavily by this module's own tests, so kept
-// (allow(dead_code) only suppresses the *production*-reachability
-// warning, not test usage, which is why these still show as tested above).
-#[allow(dead_code)]
 pub fn read(conn: &Connection, id: &str) -> Result<Option<Run>, StoreError> {
     conn.query_row(
         &format!("SELECT {SELECT_COLUMNS} FROM runs WHERE id = ?1"),
@@ -190,7 +193,6 @@ pub fn read(conn: &Connection, id: &str) -> Result<Option<Run>, StoreError> {
 }
 
 /// Most recent runs first, capped at `limit`.
-#[allow(dead_code)]
 pub fn list(conn: &Connection, limit: i64) -> Result<Vec<Run>, StoreError> {
     let mut stmt = conn.prepare(&format!(
         "SELECT {SELECT_COLUMNS} FROM runs ORDER BY started_at DESC LIMIT ?1"

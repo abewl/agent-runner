@@ -43,6 +43,8 @@ enum Commands {
         #[arg(long)]
         running: bool,
     },
+    /// Show the full result/failure detail and continuation signal for one run
+    Logs { run_id: String },
 }
 
 #[derive(Subcommand)]
@@ -82,6 +84,7 @@ fn main() {
         },
         Commands::Run { task } => cli::run::run(&task),
         Commands::Status { running } => cli::status::status(running),
+        Commands::Logs { run_id } => cli::logs::logs(&run_id),
     };
 
     if let Err(err) = result {
