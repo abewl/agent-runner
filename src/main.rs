@@ -7,11 +7,13 @@ mod config;
 mod daemon;
 mod paths;
 mod pid;
-// Not yet called anywhere — F-04 (Claude Subprocess Runner), its intended
+// Not yet called from a CLI command — F-10 (`runner run`), the intended
 // caller, doesn't exist yet. Genuinely unused for now, not dead code; the
-// allow comes off once F-04 wires it in.
+// allow comes off once F-10 wires it in.
 #[allow(dead_code)]
 mod preflight;
+#[allow(dead_code)]
+mod process;
 
 #[derive(Parser)]
 #[command(name = "runner", version, about = "Thin local agent-run daemon")]
