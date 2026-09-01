@@ -170,6 +170,12 @@ No store-mutating function (anything in `store/runs.rs` or `store/schedules.rs` 
 
 ---
 
+## Ambient auth mechanism (F-03) — corrects an earlier assumption
+
+`claude`'s login credentials, on a real, currently-logged-in Claude Code install, live in the **macOS Keychain** under the generic-password service name `"Claude Code-credentials"` — verified directly (`security find-generic-password -s "Claude Code-credentials"`, `ls ~/.claude/`), not assumed. This supersedes an earlier assumption in `PROJECT.md`/`SPEC.md`'s Stage-1 scoping (carried over from reading chili-jar's `claude-code` adapter, which references a `~/.claude/.credentials.json` file) — that file does not exist on this machine; the Keychain entry does. `src/preflight.rs`'s login check queries Keychain presence only (`security find-generic-password -s <service>`, checking exit status — **never** `-w`, which would print the actual secret). Any future code that needs to reason about "is `claude` logged in" should use this mechanism, not the credentials-file assumption.
+
+---
+
 ## Testing conventions (F-01, F-02)
 
 - **Integration tests share `tests/common/mod.rs`.** (Named `common/mod.rs`, not `common.rs`, specifically so Cargo treats it as a shared module rather than compiling it as its own empty test binary.) Any new integration test file that needs to spawn the compiled binary against an isolated `RUNNER_HOME`, wait for a pid file, or force-stop a leaked daemon should `mod common; use common::*;` rather than re-deriving these helpers — F-01 and F-02 originally each had their own copy, which is exactly the kind of drift this file exists to prevent.
