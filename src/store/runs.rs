@@ -35,6 +35,15 @@ impl RunStatus {
     }
 }
 
+/// The canonical way to display a status anywhere in the codebase (F-11's
+/// `runner status`, F-12's `runner logs`, eventually F-15's TUI) — reuses
+/// the same strings the DB itself stores, via `as_str`.
+impl std::fmt::Display for RunStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Run {
     pub id: String,

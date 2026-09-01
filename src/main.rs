@@ -36,6 +36,13 @@ enum Commands {
     },
     /// Run a task now, synchronously, against the configured repo
     Run { task: String },
+    /// Show recent runs (alias: ps)
+    #[command(alias = "ps")]
+    Status {
+        /// Only show currently-running rows
+        #[arg(long)]
+        running: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -74,6 +81,7 @@ fn main() {
             RepoAction::Show => cli::repo::show(),
         },
         Commands::Run { task } => cli::run::run(&task),
+        Commands::Status { running } => cli::status::status(running),
     };
 
     if let Err(err) = result {

@@ -89,7 +89,21 @@ pub fn force_stop(runner_home: &Path) {
         unsafe {
             libc::kill(pid, libc::SIGTERM);
         }
-        wait_until(Duration::from_secs(5), || !process_alive(pid));
+        // Same class of bug fixed twice already in this file (see
+        // `wait_for_pid_file`'s history) — discarding `wait_until`'s
+        // return value turns a real timeout into a silent no-op instead
+        // of a visible failure, which is exactly how this one leaked a
+        // real daemon + caffeinate process undetected across several
+        // "all green" test runs. A generous timeout (well beyond the
+        // product's own 5s `daemon stop` budget) since this is a test
+        // cleanup budget, not a product AC being measured — plenty of
+        // slack for heavy concurrent load from running the whole suite
+        // back-to-back, without masking a genuine hang.
+        let stopped = wait_until(Duration::from_secs(15), || !process_alive(pid));
+        assert!(
+            stopped,
+            "force_stop: pid {pid} did not exit within 15s of SIGTERM — leaked a real daemon process instead of silently giving up"
+        );
     }
 }
 
