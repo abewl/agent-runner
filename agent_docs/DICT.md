@@ -94,6 +94,12 @@ Two distinct concepts — do not conflate:
 
 ---
 
+## `runs.owner_pid` (F-08, corrects F-07's original column list)
+
+F-07's schema didn't include a per-row process owner. F-08's startup reconciliation (SPEC.md AC-04) needs one: reconciling "any `running` row whose owning process is confirmed not alive" only works if you can tell *which* process owns a row — otherwise a concurrently active daemon tick's legitimately-in-flight run looks identical to one abandoned by a dead process, and a separate `runner status` invocation running reconciliation would wrongly mark it interrupted. `owner_pid INTEGER NOT NULL DEFAULT 0` was added directly to F-07's `CREATE TABLE` statement (schema version bumped 1→2 — no `ALTER TABLE` path, since Stage 1 has never shipped, so no real `runner.db` exists anywhere with the old shape to migrate). `persist::reconcile_interrupted_runs` checks each row's `owner_pid` via `pid::process_alive` individually, never treats "found a `running` row" alone as sufficient.
+
+---
+
 ## Run status values
 
 `runs.status` is one of exactly four values — do not introduce new ones without a DICT.md update:

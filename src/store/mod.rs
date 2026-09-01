@@ -8,11 +8,14 @@ use rusqlite::Connection;
 pub mod runs;
 pub mod schedules;
 
-/// Bumped whenever the schema changes. There's only one version so far —
-/// `CREATE TABLE IF NOT EXISTS` is what actually makes `migrate` idempotent
-/// today; `user_version` is set defensively so a future migration has a
-/// version to branch on, not because anything reads it yet.
-const SCHEMA_VERSION: i64 = 1;
+/// Bumped whenever the schema changes. `CREATE TABLE IF NOT EXISTS` is what
+/// actually makes `migrate` idempotent; `user_version` is set defensively
+/// so a future migration has a version to branch on, not because anything
+/// reads it yet. v2 (F-08) added `runs.owner_pid` directly to the `CREATE
+/// TABLE` statement below rather than an `ALTER TABLE` migration path —
+/// safe and correct only because Stage 1 has never been released, so no
+/// real `runner.db` exists anywhere with the v1 shape to migrate from.
+const SCHEMA_VERSION: i64 = 2;
 
 #[derive(Debug)]
 pub enum StoreError {
@@ -51,7 +54,12 @@ pub fn open() -> Result<Connection, StoreError> {
     Ok(conn)
 }
 
-fn migrate(conn: &Connection) -> Result<(), StoreError> {
+/// `pub(crate)` (not just private-to-`store`) specifically so sibling
+/// modules' tests (e.g. `persist.rs`) can set up a real, correctly-shaped
+/// in-memory DB via `Connection::open_in_memory()` + this, the same way
+/// `store::runs`/`store::schedules`'s own tests already do as child
+/// modules — one migration function, never a second hand-copied schema.
+pub(crate) fn migrate(conn: &Connection) -> Result<(), StoreError> {
     conn.execute_batch(
         "
         CREATE TABLE IF NOT EXISTS runs (
@@ -67,7 +75,8 @@ fn migrate(conn: &Connection) -> Result<(), StoreError> {
             retry_count INTEGER NOT NULL DEFAULT 0,
             next_action TEXT,
             next_action_reason TEXT,
-            recheck_after TEXT
+            recheck_after TEXT,
+            owner_pid INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS schedules (

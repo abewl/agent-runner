@@ -50,6 +50,15 @@ pub struct Run {
     pub next_action: Option<String>,
     pub next_action_reason: Option<String>,
     pub recheck_after: Option<String>,
+    /// The OS pid of the `runner` process that created this row — added in
+    /// F-08 (not part of F-07's original column list) specifically so
+    /// startup reconciliation (SPEC.md F-08 AC-04) can tell a genuinely
+    /// still-in-flight run (its owning process is alive) from one
+    /// abandoned by a process that died mid-run, rather than assuming
+    /// every `running` row found at startup is automatically stale — a
+    /// concurrently-running daemon tick could easily leave a legitimate
+    /// one for a `runner status` invocation to see. See `DICT.md`.
+    pub owner_pid: i64,
 }
 
 pub struct NewRun<'a> {
@@ -57,9 +66,10 @@ pub struct NewRun<'a> {
     pub task_identity: &'a str,
     pub task: &'a str,
     pub started_at: &'a str,
+    pub owner_pid: i64,
 }
 
-const SELECT_COLUMNS: &str = "id, task_identity, task, status, session_id, cost_usd, started_at, ended_at, exit_reason, retry_count, next_action, next_action_reason, recheck_after";
+const SELECT_COLUMNS: &str = "id, task_identity, task, status, session_id, cost_usd, started_at, ended_at, exit_reason, retry_count, next_action, next_action_reason, recheck_after, owner_pid";
 
 fn row_to_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<Run> {
     let status_str: String = row.get(3)?;
@@ -84,6 +94,7 @@ fn row_to_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<Run> {
         next_action: row.get(10)?,
         next_action_reason: row.get(11)?,
         recheck_after: row.get(12)?,
+        owner_pid: row.get(13)?,
     })
 }
 
@@ -92,8 +103,63 @@ fn row_to_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<Run> {
 /// starts); there's no code path that creates a row in any other status.
 pub fn create(conn: &Connection, new_run: &NewRun) -> Result<(), StoreError> {
     conn.execute(
-        "INSERT INTO runs (id, task_identity, task, status, started_at, retry_count) VALUES (?1, ?2, ?3, 'running', ?4, 0)",
-        params![new_run.id, new_run.task_identity, new_run.task, new_run.started_at],
+        "INSERT INTO runs (id, task_identity, task, status, started_at, retry_count, owner_pid) VALUES (?1, ?2, ?3, 'running', ?4, 0, ?5)",
+        params![
+            new_run.id,
+            new_run.task_identity,
+            new_run.task,
+            new_run.started_at,
+            new_run.owner_pid
+        ],
+    )?;
+    Ok(())
+}
+
+/// Marks a run done with its full result — session id, cost, and the
+/// parsed continuation signal (already converted to an absolute
+/// `recheck_after` timestamp by the caller). Updates the row exactly
+/// once — never a second insert (SPEC.md AC-02/AC-03).
+#[allow(clippy::too_many_arguments)]
+pub fn mark_done(
+    conn: &Connection,
+    id: &str,
+    session_id: Option<&str>,
+    cost_usd: f64,
+    ended_at: &str,
+    retry_count: i64,
+    next_action: &str,
+    next_action_reason: &str,
+    recheck_after: Option<&str>,
+) -> Result<(), StoreError> {
+    conn.execute(
+        "UPDATE runs SET status='done', session_id=?2, cost_usd=?3, ended_at=?4, retry_count=?5, next_action=?6, next_action_reason=?7, recheck_after=?8 WHERE id=?1",
+        params![
+            id,
+            session_id,
+            cost_usd,
+            ended_at,
+            retry_count,
+            next_action,
+            next_action_reason,
+            recheck_after
+        ],
+    )?;
+    Ok(())
+}
+
+/// Marks a run failed — both attempts (SPEC.md F-06) exhausted.
+/// `next_action`/`next_action_reason`/`recheck_after` are left null, since
+/// a failed run produced no valid signal to persist.
+pub fn mark_failed(
+    conn: &Connection,
+    id: &str,
+    exit_reason: &str,
+    ended_at: &str,
+    retry_count: i64,
+) -> Result<(), StoreError> {
+    conn.execute(
+        "UPDATE runs SET status='failed', exit_reason=?2, ended_at=?3, retry_count=?4 WHERE id=?1",
+        params![id, exit_reason, ended_at, retry_count],
     )?;
     Ok(())
 }
@@ -163,6 +229,7 @@ mod tests {
                 task_identity: "manual:hello",
                 task: "hello",
                 started_at: "2026-09-01T00:00:00Z",
+                owner_pid: 100,
             },
         )
         .unwrap();
@@ -191,6 +258,7 @@ mod tests {
                 task_identity: "t",
                 task: "task",
                 started_at: "2026-09-01T00:00:00Z",
+                owner_pid: 100,
             },
         )
         .unwrap();
@@ -201,6 +269,7 @@ mod tests {
                 task_identity: "t",
                 task: "task",
                 started_at: "2026-09-01T01:00:00Z",
+                owner_pid: 100,
             },
         )
         .unwrap();
@@ -221,6 +290,7 @@ mod tests {
                     task_identity: "t",
                     task: "task",
                     started_at: &format!("2026-09-01T00:0{i}:00Z"),
+                    owner_pid: 100,
                 },
             )
             .unwrap();
@@ -238,6 +308,7 @@ mod tests {
                 task_identity: "t",
                 task: "task",
                 started_at: "2026-09-01T00:00:00Z",
+                owner_pid: 100,
             },
         )
         .unwrap();
@@ -248,6 +319,7 @@ mod tests {
                 task_identity: "t",
                 task: "task",
                 started_at: "2026-09-01T00:01:00Z",
+                owner_pid: 100,
             },
         )
         .unwrap();
@@ -268,6 +340,7 @@ mod tests {
                 task_identity: "t",
                 task: "task",
                 started_at: "2026-09-01T00:00:00Z",
+                owner_pid: 100,
             },
         )
         .unwrap();
@@ -278,6 +351,7 @@ mod tests {
                 task_identity: "t",
                 task: "task",
                 started_at: "2026-09-01T00:01:00Z",
+                owner_pid: 100,
             },
         )
         .unwrap();
