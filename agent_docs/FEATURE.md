@@ -12,12 +12,12 @@ Scope: `agent_docs/PROJECT.md` §2–§4, Stage 1 only. A single static Rust bin
 
 ---
 
-## F-01: CLI Skeleton & Daemon Lifecycle [2026-08-30]
-- Status: [ ] todo
+## F-01: CLI Skeleton & Daemon Lifecycle [2026-08-30] [2026-09-01]
+- Status: [x] done
 - AC: AC-01, AC-02, AC-03, AC-04, AC-05, AC-06, AC-07, AC-08, AC-09
 - Ticket:
 - Description: Initialise the `runner` binary crate. `clap` (derive)-based CLI with a `daemon` subcommand group: `runner daemon start`, `runner daemon stop`, `runner daemon status`. `start` forks/detaches into a long-lived background process, writes a PID file to the Stage 1 data directory, and installs SIGTERM/SIGINT handlers for clean shutdown. Once detached and its PID file is written, the daemon spawns `caffeinate -s -w <own-pid>` as an independent child so the machine cannot sleep for as long as the daemon is alive — no separate lifecycle management needed, since `-w <pid>` makes `caffeinate` self-terminate the moment the daemon's PID exits, including on a crash, not just a clean `daemon stop`. `stop` reads the PID file and sends SIGTERM, waiting briefly for exit before reporting failure. `status` reports running/stopped by checking the PID file against the live process table. Logging via `tracing` + `tracing-subscriber` to a log file under the data directory. This feature does not yet run any `claude` invocation or scheduler tick — it's the process shell everything else attaches to. Foundational — every other feature depends on this.
-- Completion note:
+- Completion note: All 9 ACs implemented and covered by tests — 9 unit tests (`src/paths.rs`, `src/pid.rs`) for pure path/pid-parsing logic, 10 integration tests (`tests/daemon_lifecycle.rs`) driving the compiled binary end-to-end for the lifecycle behavior (detach timing, already-running rejection, stop/status/stale-pid-file handling, log file content, caffeinate spawn + self-termination, SIGINT as well as SIGTERM). `cargo build`, `cargo clippy --all-targets`, and `cargo fmt --check` all clean; full suite re-run 5×/3× (isolated and combined) with zero flakes and zero leaked processes after the fix below. **One real bug found and fixed via the AC-06 SIGINT test, not by inspection**: `daemonize`'s built-in `.pid_file()` option writes the pid file *before* our code gets a chance to install `tokio::signal::unix` handlers, leaving a real window where a signal sent immediately after the pid file appears hits the OS's default disposition (immediate termination, no cleanup) instead of our handler — contradicting AC-06's own "rather than relying on default OS termination behavior" intent. Fixed by not using `daemonize`'s `.pid_file()` at all: signal handlers are now registered first inside `daemon::run()`, and only then does the daemon write its own pid file, closing the race structurally rather than papering over it with a test-side delay. No AC conflicts. No follow-up items — the next CLAUDE-PM-relevant note is in `DICT.md`'s repo-layout section, which now reflects the actual module split (`daemon::write_pid_file` owns the pid file, not `cli::daemon`/`daemonize`).
 
 ## F-02: Target Repo Configuration [2026-08-30]
 - Status: [ ] todo

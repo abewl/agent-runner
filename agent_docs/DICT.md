@@ -2,7 +2,7 @@
 
 Project-specific patterns, naming conventions, and function signatures. Updated by CLAUDE-PM when a feature introduces or deprecates a pattern. Claude-as-engineer reads this before implementing; does not edit directly.
 
-**Last updated:** 2026-08-30
+**Last updated:** 2026-09-01
 
 ---
 
@@ -11,9 +11,17 @@ Project-specific patterns, naming conventions, and function signatures. Updated 
 ```
 Cargo.toml        — binary crate, package name "runner"
 src/
-  main.rs          — CLI entrypoint (clap dispatch)
-  cli/             — subcommand implementations (daemon, repo, run, status, logs, cron, tui)
-  daemon.rs         — daemon process: lifecycle, signal handling, PID file, cron ticker
+  main.rs          — CLI entrypoint (clap dispatch) [F-01]
+  paths.rs         — RUNNER_HOME resolution + derived paths (pid file, log file, log dir) [F-01]
+  pid.rs           — pid-file read + liveness-check helpers, shared by cli/daemon.rs [F-01]
+  daemon.rs         — the daemon process body once detached: logging init, signal-handler
+                      registration (before the pid file is written — see "Signal handlers
+                      before pid file" below), pid file write, caffeinate spawn, shutdown
+                      wait, cleanup. Cron ticker lands here too at F-14. [F-01, F-14]
+  cli/             — subcommand implementations
+    mod.rs
+    daemon.rs        — `runner daemon start|stop|status` [F-01]
+    (repo, run, status, logs, cron, tui — F-02, F-10–15)
   config.rs         — F-02 target-repo config file (read/write $RUNNER_HOME/config.toml)
   runner.rs         — the "run one claude turn" pipeline (preflight → continuation lookup → subprocess → signal parse → retry → persist)
   preflight.rs      — F-03 ambient-auth check
@@ -25,9 +33,15 @@ src/
     schedules.rs      — typed CRUD for the `schedules` table
   cron_engine.rs     — F-14 tick loop + cron expression evaluation + recheck_after gating
   tui/              — F-15 ratatui view + input handling (read-only)
+tests/
+  daemon_lifecycle.rs — F-01 integration tests, driving the compiled binary via
+                        `env!("CARGO_BIN_EXE_runner")`, one isolated `RUNNER_HOME`
+                        temp dir per test
 ```
 
 No workspace, no sub-crates — single binary crate, matching the "thin" project goal. Split into modules for clarity only.
+
+**Signal handlers before pid file (F-01, load-bearing — do not reorder).** `daemon::run()` registers `tokio::signal::unix::signal()` handlers *before* calling `write_pid_file()`, and does not use `daemonize`'s built-in `.pid_file()` option at all. `tokio::signal::unix::signal()` installs the OS-level handler synchronously at call time, not lazily on first `.recv().await` — so this ordering closes a real race: writing the pid file first (as `daemonize`'s own option would) creates a window where a signal sent the instant the pid file appears hits the OS's default disposition (immediate termination, no cleanup) instead of ours. This was caught by an integration test sending `SIGINT` directly rather than only through `runner daemon stop` (which has its own redundant client-side pid-file removal that was masking the bug for the `SIGTERM` path) — worth remembering when adding any future signal-adjacent behavior: test the signal path directly, not only through the CLI command that happens to send it.
 
 ---
 
@@ -43,6 +57,8 @@ No workspace, no sub-crates — single binary crate, matching the "thin" project
 | Cron parsing | `cron` crate | Standard 5-field cron expression parsing/evaluation. |
 | Time | `chrono` (or `time`, pick one and use it everywhere — do not mix) | Timestamps stored as ISO-8601 TEXT in SQLite (see Local State Store, F-07). |
 | Logging | `tracing` + `tracing-subscriber` | Same choice Herdr made. |
+| Daemonize (fork/detach) | `daemonize` | Handles the double-fork/setsid dance correctly (F-01). Its own `.pid_file()` option is deliberately **not used** — see "Signal handlers before pid file" above; we write the pid file ourselves, later, from inside `daemon.rs`. |
+| Raw syscalls (`kill`, liveness checks) | `libc` | `kill(pid, 0)` for liveness checks (F-01 `pid.rs`), `SIGTERM`/`SIGINT` constants. Not in the original locked table — added when F-01 needed it; no conflict with anything else here. |
 | TUI | `ratatui` + `crossterm` | Same choice Herdr made — proven, cross-platform terminal handling. |
 | JSON | `serde` + `serde_json` | Parsing `claude --output-format json` output. |
 
