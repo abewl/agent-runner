@@ -23,13 +23,13 @@ Epics are the layer between `PROJECT.md` (the requirements) and `FEATURE.md` (th
 ---
 
 ## E-01: Runtime Core [2026-08-30]
-- Status: [ ] scoping
+- Status: [x] done
 - Objective: The foundation every other epic builds on — CLI/daemon skeleton, target-repo configuration, ambient-auth preflight, the actual `claude` subprocess invocation, the continuation-signal trailer convention, and bounded local retry. Nothing here touches persistence beyond the PID file and repo config; it's the raw "run one claude turn correctly, in the right repo, and get a structured continuation signal back" capability.
 - Features: F-01, F-02, F-03, F-04, F-05, F-06
 - Depends on: n/a — first epic
 
 ## E-02: Persistence [2026-08-30]
-- Status: [ ] scoping
+- Status: [~] in progress
 - Objective: The local SQLite-backed state store that everything else (manual runs, scheduled runs, the TUI) reads and writes. Covers schema/init (now including the continuation-signal columns), wiring run lifecycle into it, restart reconciliation for interrupted runs, and combined session+continuation lookup so a named task's `claude --resume` continuity and its last self-reported signal both survive across separate invocations.
 - Features: F-07, F-08, F-09
 - Depends on: E-01 (persists the outcome of E-01's run pipeline)

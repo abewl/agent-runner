@@ -15,6 +15,8 @@ mod preflight;
 #[allow(dead_code)]
 mod process;
 #[allow(dead_code)]
+mod retry;
+#[allow(dead_code)]
 mod signal;
 
 #[derive(Parser)]
