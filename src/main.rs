@@ -5,24 +5,14 @@ use clap::{Parser, Subcommand};
 mod cli;
 mod config;
 mod daemon;
-mod paths;
-mod pid;
-// Not yet called from a CLI command — F-10 (`runner run`), the intended
-// caller, doesn't exist yet. Genuinely unused for now, not dead code; the
-// allow comes off once F-10 wires it in.
-#[allow(dead_code)]
 mod lookup;
-#[allow(dead_code)]
+mod paths;
 mod persist;
-#[allow(dead_code)]
+mod pid;
 mod preflight;
-#[allow(dead_code)]
 mod process;
-#[allow(dead_code)]
 mod retry;
-#[allow(dead_code)]
 mod signal;
-#[allow(dead_code)]
 mod store;
 
 #[derive(Parser)]
@@ -44,6 +34,8 @@ enum Commands {
         #[command(subcommand)]
         action: RepoAction,
     },
+    /// Run a task now, synchronously, against the configured repo
+    Run { task: String },
 }
 
 #[derive(Subcommand)]
@@ -81,6 +73,7 @@ fn main() {
             RepoAction::Set { path } => cli::repo::set(&path),
             RepoAction::Show => cli::repo::show(),
         },
+        Commands::Run { task } => cli::run::run(&task),
     };
 
     if let Err(err) = result {

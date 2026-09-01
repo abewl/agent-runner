@@ -164,6 +164,12 @@ pub fn mark_failed(
     Ok(())
 }
 
+// `read`/`list` aren't called from production code yet — F-11 (`runner
+// status`/`ps`) and F-12 (`runner logs`) are their first real consumers.
+// Already exercised heavily by this module's own tests, so kept
+// (allow(dead_code) only suppresses the *production*-reachability
+// warning, not test usage, which is why these still show as tested above).
+#[allow(dead_code)]
 pub fn read(conn: &Connection, id: &str) -> Result<Option<Run>, StoreError> {
     conn.query_row(
         &format!("SELECT {SELECT_COLUMNS} FROM runs WHERE id = ?1"),
@@ -175,6 +181,7 @@ pub fn read(conn: &Connection, id: &str) -> Result<Option<Run>, StoreError> {
 }
 
 /// Most recent runs first, capped at `limit`.
+#[allow(dead_code)]
 pub fn list(conn: &Connection, limit: i64) -> Result<Vec<Run>, StoreError> {
     let mut stmt = conn.prepare(&format!(
         "SELECT {SELECT_COLUMNS} FROM runs ORDER BY started_at DESC LIMIT ?1"

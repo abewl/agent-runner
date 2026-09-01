@@ -6,6 +6,9 @@
 use rusqlite::Connection;
 
 pub mod runs;
+// Genuinely unused so far — F-13 (Schedule Store & CLI) is its first
+// consumer, not built yet. The allow comes off then.
+#[allow(dead_code)]
 pub mod schedules;
 
 /// Bumped whenever the schema changes. `CREATE TABLE IF NOT EXISTS` is what
