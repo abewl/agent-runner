@@ -206,6 +206,25 @@ pub fn update_status(conn: &Connection, id: &str, status: RunStatus) -> Result<(
     Ok(())
 }
 
+/// Most recent `done` row for a task identity — F-09's resume/continuation
+/// lookup. `failed`/`interrupted` rows never qualify, even if more recent
+/// than the last `done` one (SPEC.md F-09 AC-03) — the `WHERE status =
+/// 'done'` filter applies before the ordering, not after.
+pub fn most_recent_done_for_task(
+    conn: &Connection,
+    task_identity: &str,
+) -> Result<Option<Run>, StoreError> {
+    conn.query_row(
+        &format!(
+            "SELECT {SELECT_COLUMNS} FROM runs WHERE task_identity = ?1 AND status = 'done' ORDER BY started_at DESC LIMIT 1"
+        ),
+        params![task_identity],
+        row_to_run,
+    )
+    .optional()
+    .map_err(StoreError::from)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -366,5 +385,102 @@ mod tests {
             read(&conn, "r2").unwrap().unwrap().status,
             RunStatus::Running
         );
+    }
+
+    #[test]
+    fn most_recent_done_for_task_ignores_failed_and_interrupted_even_if_newer() {
+        let conn = open_in_memory();
+        create(
+            &conn,
+            &NewRun {
+                id: "done-older",
+                task_identity: "t",
+                task: "task",
+                started_at: "2026-09-01T00:00:00Z",
+                owner_pid: 100,
+            },
+        )
+        .unwrap();
+        update_status(&conn, "done-older", RunStatus::Done).unwrap();
+
+        create(
+            &conn,
+            &NewRun {
+                id: "failed-newer",
+                task_identity: "t",
+                task: "task",
+                started_at: "2026-09-01T00:05:00Z",
+                owner_pid: 100,
+            },
+        )
+        .unwrap();
+        update_status(&conn, "failed-newer", RunStatus::Failed).unwrap();
+
+        let found = most_recent_done_for_task(&conn, "t").unwrap().unwrap();
+        assert_eq!(
+            found.id, "done-older",
+            "a newer failed row must not shadow the last done one"
+        );
+    }
+
+    #[test]
+    fn most_recent_done_for_task_picks_the_latest_of_several_done_rows() {
+        let conn = open_in_memory();
+        for (id, started_at) in [
+            ("d1", "2026-09-01T00:00:00Z"),
+            ("d2", "2026-09-01T00:05:00Z"),
+        ] {
+            create(
+                &conn,
+                &NewRun {
+                    id,
+                    task_identity: "t",
+                    task: "task",
+                    started_at,
+                    owner_pid: 100,
+                },
+            )
+            .unwrap();
+            update_status(&conn, id, RunStatus::Done).unwrap();
+        }
+
+        let found = most_recent_done_for_task(&conn, "t").unwrap().unwrap();
+        assert_eq!(found.id, "d2");
+    }
+
+    #[test]
+    fn most_recent_done_for_task_none_when_never_done() {
+        let conn = open_in_memory();
+        create(
+            &conn,
+            &NewRun {
+                id: "r1",
+                task_identity: "t",
+                task: "task",
+                started_at: "2026-09-01T00:00:00Z",
+                owner_pid: 100,
+            },
+        )
+        .unwrap();
+        assert_eq!(most_recent_done_for_task(&conn, "t").unwrap(), None);
+    }
+
+    #[test]
+    fn most_recent_done_for_task_scoped_to_the_given_identity() {
+        let conn = open_in_memory();
+        create(
+            &conn,
+            &NewRun {
+                id: "other-task",
+                task_identity: "other",
+                task: "task",
+                started_at: "2026-09-01T00:00:00Z",
+                owner_pid: 100,
+            },
+        )
+        .unwrap();
+        update_status(&conn, "other-task", RunStatus::Done).unwrap();
+
+        assert_eq!(most_recent_done_for_task(&conn, "t").unwrap(), None);
     }
 }

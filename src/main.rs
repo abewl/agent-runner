@@ -11,6 +11,8 @@ mod pid;
 // caller, doesn't exist yet. Genuinely unused for now, not dead code; the
 // allow comes off once F-10 wires it in.
 #[allow(dead_code)]
+mod lookup;
+#[allow(dead_code)]
 mod persist;
 #[allow(dead_code)]
 mod preflight;

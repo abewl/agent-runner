@@ -29,13 +29,13 @@ Epics are the layer between `PROJECT.md` (the requirements) and `FEATURE.md` (th
 - Depends on: n/a — first epic
 
 ## E-02: Persistence [2026-08-30]
-- Status: [~] in progress
+- Status: [x] done
 - Objective: The local SQLite-backed state store that everything else (manual runs, scheduled runs, the TUI) reads and writes. Covers schema/init (now including the continuation-signal columns), wiring run lifecycle into it, restart reconciliation for interrupted runs, and combined session+continuation lookup so a named task's `claude --resume` continuity and its last self-reported signal both survive across separate invocations.
 - Features: F-07, F-08, F-09
 - Depends on: E-01 (persists the outcome of E-01's run pipeline)
 
 ## E-03: CLI Manual Control [2026-08-30]
-- Status: [ ] scoping
+- Status: [~] in progress
 - Objective: The user-facing commands for triggering and inspecting runs by hand — `runner run`, `runner status`/`ps`, `runner logs`. These operate directly against the Stage 1 local store; none of them require the daemon to be running.
 - Features: F-10, F-11, F-12
 - Depends on: E-01, E-02
