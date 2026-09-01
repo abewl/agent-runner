@@ -14,6 +14,8 @@ mod pid;
 mod preflight;
 #[allow(dead_code)]
 mod process;
+#[allow(dead_code)]
+mod signal;
 
 #[derive(Parser)]
 #[command(name = "runner", version, about = "Thin local agent-run daemon")]
