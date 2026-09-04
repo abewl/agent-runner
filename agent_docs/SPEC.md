@@ -95,7 +95,7 @@ AC items are append-only. Revise in place when behavior changes; never delete hi
 - AC-06: A cron-triggered run, once started, follows the identical persistence and retry behavior (F-06, F-08) as a manually triggered run — no separate code path.
 
 ## TUI Status Dashboard (F-15)
-- AC-01: `runner tui` renders a scrollable list of runs (id, task, status, started_at, next_action), most-recent-first, sourced from the same store `runner status` reads.
+- AC-01: `runner log` renders a scrollable list of runs (id, task, status, started_at, next_action), most-recent-first, sourced from the same store `runner status` reads.
 - AC-02: The list refreshes automatically on a fixed 2-second poll interval without requiring user input, and without flickering/full-redraw artifacts on each refresh.
 - AC-03: Selecting a run (arrow keys + enter, or equivalent) shows a detail pane with the same result/error/next_action/reason/recheck_after content `runner logs` would print for that run id.
 - AC-04: No keybinding in this view mutates any run or schedule state (no kill/retry/delete) — confirmed by inspection: no write-path store functions are reachable from the TUI's input handling in this batch.

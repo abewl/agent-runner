@@ -52,7 +52,7 @@ enum Commands {
         action: CronAction,
     },
     /// Launch the read-only terminal status dashboard
-    Tui,
+    Log,
 }
 
 #[derive(Subcommand)]
@@ -108,7 +108,7 @@ fn main() {
             CronAction::List => cli::cron::list(),
             CronAction::Remove { schedule_id } => cli::cron::remove(&schedule_id),
         },
-        Commands::Tui => cli::tui::run(),
+        Commands::Log => cli::tui::run(),
     };
 
     if let Err(err) = result {

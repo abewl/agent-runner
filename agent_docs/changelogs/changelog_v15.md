@@ -6,7 +6,7 @@
 
 ## Summary
 
-`runner tui` — a `ratatui` + `crossterm` read-only dashboard: a scrollable, most-recent-first run list (id, task, status, started_at, next_action) on a 2s auto-refresh, with a live detail pane tracking the current selection that shows the same result/failure/signal content `runner logs` prints. `q`/`Ctrl+C` exits cleanly. Lives at `src/cli/tui/` (`mod.rs` for terminal setup/render/event-loop, `app.rs` for state), a sibling of `cli::status`/`cli::logs` rather than a separate top-level module. **Stage 1 Batch 1 is now complete — all 15 features across all 5 epics (E-01 through E-05) are done.**
+`runner log` — a `ratatui` + `crossterm` read-only dashboard: a scrollable, most-recent-first run list (id, task, status, started_at, next_action) on a 2s auto-refresh, with a live detail pane tracking the current selection that shows the same result/failure/signal content `runner logs` prints. `q`/`Ctrl+C` exits cleanly. Lives at `src/cli/tui/` (`mod.rs` for terminal setup/render/event-loop, `app.rs` for state), a sibling of `cli::status`/`cli::logs` rather than a separate top-level module. **Stage 1 Batch 1 is now complete — all 15 features across all 5 epics (E-01 through E-05) are done.**
 
 ## One formatter, not two copies that could drift
 
