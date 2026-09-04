@@ -182,7 +182,18 @@ macOS-only. If `caffeinate` isn't on `PATH` (i.e. anywhere other than macOS), th
 
 ## TUI is read-only
 
-No store-mutating function (anything in `store/runs.rs` or `store/schedules.rs` beyond read/list) is ever called from `src/tui/`. This is a structural rule, not just a behavioral one — F-15 AC-04 expects it to be verifiable by inspection of what the TUI module can reach, not just by testing.
+No store-mutating function (anything in `store/runs.rs` or `store/schedules.rs` beyond read/list) is ever called from `src/cli/tui/` (implemented in F-15 — lives under `cli/`, alongside every other command, not as a separate top-level `src/tui/`). This is a structural rule, not just a behavioral one — F-15 AC-04 expects it to be verifiable by inspection of what the TUI module can reach, not just by testing: `App::refresh` (`cli/tui/app.rs`) is the *only* function in the module that touches a `Connection` at all, and it only ever calls `runs::list`.
+
+---
+
+## Manually smoke-testing a raw-mode terminal app non-interactively (F-15)
+
+`runner tui` (`ratatui` + `crossterm`, alternate screen + raw mode) can't be exercised by piping stdin the way every other command's manual verification has been — a plain `printf 'q' | runner tui` doesn't give it a real pty at all, and `expect`, which does allocate one, defaults that pty to a **0x0 window** when `expect` itself has no controlling terminal (true here — this project's manual verification runs inside a non-interactive tool shell, not a real terminal session). A 0x0 `Rect` from `frame.area()` makes `ratatui` lay out and draw nothing at all — the process runs, enters/leaves the alternate screen correctly, and exits 0, which *looks* like a clean pass while silently never having rendered a single widget. Caught by checking the raw captured session bytes for actual rendered text (`strings -n 3` on the log), not just checking the exit code — an empty result there is the tell. Fixed by explicitly sizing the pty before the first draw, using Expect's builtin `stty` command against the pty slave device:
+```tcl
+spawn $bin tui
+stty rows 40 columns 120 < $spawn_out(slave,name)
+```
+After that fix, the same session log showed genuine rendered content (row text, reverse-video selection highlight, the detail pane's `next_action`/`next_action_reason` labels) — confirmed with `strings -n 3 session.log | grep <expected row/field text>`. Any future manual verification of a raw-mode/full-screen terminal feature in this project should size the pty this way from the start, rather than rediscovering the 0x0-default gap.
 
 ---
 

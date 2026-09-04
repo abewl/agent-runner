@@ -46,8 +46,8 @@ Epics are the layer between `PROJECT.md` (the requirements) and `FEATURE.md` (th
 - Features: F-13, F-14
 - Depends on: E-01, E-02, E-03 (reuses the run pipeline E-03 exercises manually)
 
-## E-05: TUI [2026-08-30]
-- Status: [ ] scoping
+## E-05: TUI [2026-08-30] [2026-09-04]
+- Status: [x] done
 - Objective: A simple, read-only terminal status dashboard — run list with live status and continuation signal, per-run detail/result view — reading the same local store the CLI reads. No control actions in this batch; view only.
 - Features: F-15
 - Depends on: E-02 (reads the store), E-03 (mirrors the data CLI commands already expose)
