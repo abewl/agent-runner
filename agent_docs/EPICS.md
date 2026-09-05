@@ -51,3 +51,9 @@ Epics are the layer between `PROJECT.md` (the requirements) and `FEATURE.md` (th
 - Objective: A simple, read-only terminal status dashboard — run list with live status and continuation signal, per-run detail/result view — reading the same local store the CLI reads. No control actions in this batch; view only.
 - Features: F-15
 - Depends on: E-02 (reads the store), E-03 (mirrors the data CLI commands already expose)
+
+## E-06: Self-Chaining Execution [2026-09-05]
+- Status: [~] in progress
+- Objective: Stage 1 Batch 1 (E-01–E-05) treated "one `runner run` invocation" and "one `claude` turn" as the same unit — a scoping refinement, not a reversal: a human-triggered task and a single turn aren't the same thing, and this epic lets `runner run` chain a task across multiple turns (PM scopes, Engineer implements, PM reviews, ...) until the agent itself signals it's done, without a human re-invoking the CLI after every turn. Driven entirely by a new, explicit, content-blind trailer field (`CHAIN_CONTINUE`) — never a reinterpretation of `next_action`'s content, and never a repurposing of `recheck_after`, which keeps its existing cron-only meaning. Bounded by a hard iteration cap. Cron's own cadence/recheck-gating rules are unaffected — this epic only changes what a single, human-triggered `runner run` does; the daemon's tick loop is untouched.
+- Features: F-16
+- Depends on: E-01 (extends the run pipeline), E-02 (chain links are ordinary `runs` rows sharing one `task_identity` — no new store schema), E-03 (`runner run` is the command being extended)

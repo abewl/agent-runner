@@ -103,6 +103,21 @@ AC items are append-only. Revise in place when behavior changes; never delete hi
 
 ---
 
+## Self-Chaining Task Loop (F-16)
+- AC-01: The trailer instruction sent with every prompt requests a third fixed line, `CHAIN_CONTINUE: yes|no`, alongside the existing `NEXT_ACTION`/`RECHECK_AFTER` lines. This is a distinct field from `RECHECK_AFTER` — it is never inferred from `RECHECK_AFTER`'s presence/absence or from `NEXT_ACTION`'s label content.
+- AC-02: If `CHAIN_CONTINUE` is missing or unparseable, it defaults to `no` (does not continue) rather than causing a parse error for the whole signal — a chain must fail safe by stopping, not by erroring out a response that is otherwise perfectly valid for the existing (non-chaining) signal fields.
+- AC-03: `runner run <task>` chains by default: on `CHAIN_CONTINUE: yes`, Runner immediately resumes the same session (`--resume` with the just-completed run's `session_id`) and fires the next turn against the same `task_identity`, without any human re-invocation and without the daemon.
+- AC-04: `runner run --once <task>` performs exactly one turn and returns, identical to `runner run`'s pre-F-16 behavior — the opt-out path is a byte-for-byte behavioral match to the old default, not just "roughly the same."
+- AC-05: The chain stops — successfully, not as an error — the first time `CHAIN_CONTINUE: no` (or missing/unparseable, per AC-02) is reported.
+- AC-06: The chain is bounded by a hard maximum-turn cap; reaching the cap stops the chain (logged/reported as hitting the cap, distinguishable from a clean `CHAIN_CONTINUE: no` stop) rather than looping indefinitely.
+- AC-07: A hard failure (retry exhausted) on any single turn aborts the entire chain immediately and propagates the error to the CLI's exit code/stderr — it never silently continues to the next iteration.
+- AC-08: Each turn in a chain is its own `runs` row (own id, own `started_at`/result), sharing one `task_identity` — no new store schema. `runner status`/`runner logs`/the TUI show a chain's full history as an ordinary sequence of rows with no code changes of their own.
+- AC-09: The ambient-auth preflight check runs once at the start of a chain, not once per turn.
+- AC-10: `strip_trailer` also strips the `CHAIN_CONTINUE` line from stored/displayed result text, consistent with how it already strips `NEXT_ACTION`/`RECHECK_AFTER` — a chained run's stored `result_text` never shows raw trailer lines.
+- AC-11: Cron's tick loop (`cron_engine`) is unmodified by this feature — a cron-triggered run still fires exactly one turn per due tick, exactly as before F-16.
+
+---
+
 ## Entry format (reference)
 
 ```markdown
