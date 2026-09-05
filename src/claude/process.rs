@@ -1,14 +1,14 @@
-//! The core "run one claude turn" primitive (F-04). Spawns
+//! The core "run one claude turn" primitive. Spawns
 //! `claude --print --output-format json [--resume <id>] "<prompt>"` as a
 //! plain piped subprocess — no PTY, `claude` runs non-interactively — with
-//! its working directory set to the configured target repo, and parses the
-//! result out of `--output-format json`'s event array.
+//! its working directory set to the configured target repo. In practice
+//! this emits a single flat JSON object, not an array, but the parser
+//! accepts either shape defensively.
 //!
 //! No git operations (clone, branch, push) and no MCP config file writing
-//! happen anywhere in this module (SPEC.md F-04 AC-06) — invocation is a
-//! plain prompt string in, result out; any file changes happen because
-//! `claude`'s own tools write directly into the repo working tree it was
-//! launched in.
+//! happen anywhere in this module — invocation is a plain prompt string
+//! in, result out; any file changes happen because `claude`'s own tools
+//! write directly into the repo working tree it was launched in.
 
 use std::path::Path;
 use std::process::Command;
@@ -31,8 +31,8 @@ pub struct ClaudeResult {
 pub enum ClaudeError {
     /// The subprocess itself couldn't be spawned (e.g. binary not found).
     Spawn(String),
-    /// The subprocess exited non-zero (SPEC.md F-04 AC-04 — always a typed
-    /// error here, never a silent success, regardless of what stdout held).
+    /// The subprocess exited non-zero — always a typed error here, never
+    /// a silent success, regardless of what stdout held.
     NonZeroExit {
         code: Option<i32>,
         stderr: String,
@@ -71,9 +71,9 @@ impl std::fmt::Display for ClaudeError {
 }
 
 /// Real entry point — always invokes the actual `claude` binary. `cwd` is
-/// a required parameter, not a default with an override (SPEC.md AC-05) —
-/// callers resolve it from `config::repo_path()` themselves and must
-/// handle "no repo configured" before calling this at all.
+/// a required parameter, not a default with an override — callers resolve
+/// it from `config::repo_path()` themselves and must handle "no repo
+/// configured" before calling this at all.
 pub fn run(prompt: &str, resume: Option<&str>, cwd: &Path) -> Result<ClaudeResult, ClaudeError> {
     run_with(CLAUDE_BIN, prompt, resume, cwd)
 }
@@ -198,7 +198,7 @@ fn parse_claude_output(stdout: &str, resume: Option<&str>) -> Result<ClaudeResul
 /// events from, so this always returns `None` (falls straight through to
 /// `Unparseable`). Kept as a named function (rather than inlined) so the
 /// "not valid JSON" and "valid JSON, no result event" paths both read as
-/// explicitly choosing the same fallback behavior, per AC-03.
+/// explicitly choosing the same fallback behavior.
 fn fallback_to_assistant_text(_stdout: &str, _resume: Option<&str>) -> Option<ClaudeResult> {
     None
 }

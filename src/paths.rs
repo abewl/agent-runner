@@ -1,8 +1,8 @@
-//! `RUNNER_HOME` resolution and the paths derived from it (F-01, F-05, F-02).
+//! `RUNNER_HOME` resolution and the paths derived from it.
 //!
 //! `RUNNER_HOME` env var, when set, overrides the default
 //! `~/Library/Application Support/runner/` base path for everything —
-//! DB file, PID file, config file, logs (`DICT.md` "RUNNER_HOME").
+//! DB file, PID file, config file, logs.
 
 use std::io;
 use std::path::PathBuf;

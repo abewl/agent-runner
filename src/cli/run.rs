@@ -1,8 +1,9 @@
-//! `runner run <task>` command implementation (F-10) — the command every
-//! other manual-control feature and the scheduler (F-14) ultimately calls
-//! into. Standalone: does not require the daemon to be running.
+//! `runner run <task>` command implementation — the command every other
+//! manual-control command and the scheduler ultimately call into.
+//! Standalone: does not require the daemon to be running.
 
-use crate::{config, lookup, persist, preflight, signal};
+use crate::claude::{preflight, signal};
+use crate::{config, persist};
 
 pub fn run(task: &str) -> Result<(), String> {
     // Cheaper, more obviously-fixable setup error first — no subprocess
@@ -14,15 +15,15 @@ pub fn run(task: &str) -> Result<(), String> {
 
     let conn = crate::store::open().map_err(|e| e.to_string())?;
 
-    // "CLI process startup... before any new run is accepted" (SPEC.md
-    // F-08 AC-04) — `runner run` is exactly that startup point.
+    // `runner run` is the CLI's own startup point, so it reconciles any
+    // interrupted-looking row before accepting a new one.
     persist::reconcile_interrupted_runs(&conn).map_err(|e| e.to_string())?;
 
-    // AC-03: task identity for a manual run is the literal, verbatim task
-    // string — no transformation, no hashing, no namespacing prefix.
+    // Task identity for a manual run is the literal, verbatim task string —
+    // no transformation, no hashing, no namespacing prefix.
     let task_identity = task;
 
-    let continuation = lookup::lookup(&conn, task_identity).map_err(|e| e.to_string())?;
+    let continuation = persist::lookup(&conn, task_identity).map_err(|e| e.to_string())?;
     let prompt = signal::build_prompt(task, continuation.context_line.as_deref());
 
     let outcome = persist::run_and_persist(
@@ -35,15 +36,13 @@ pub fn run(task: &str) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
 
-    // `outcome.result.result` is the agent's raw response text, which
-    // already contains the NEXT_ACTION/RECHECK_AFTER trailer lines
-    // verbatim (F-05 parses them out but never strips them from the
-    // stored text — that's not its job). Printing both the raw text and
-    // the separately-parsed signal would show the trailer twice; strip it
-    // from the displayed body and print the parsed signal once, cleanly,
-    // as a status footer instead. `signal::strip_trailer` is the same
-    // function F-08's persistence layer uses before storing `result_text`,
-    // so `runner run`'s immediate output and `runner logs`'s later
+    // `outcome.result.result` still contains the NEXT_ACTION/RECHECK_AFTER
+    // trailer verbatim (parsing it out doesn't strip it from the stored
+    // text). Printing both the raw text and the separately-parsed signal
+    // would show the trailer twice, so strip it from the displayed body
+    // and print the parsed signal once, as a status footer — the same
+    // stripping function the persistence layer uses before storing
+    // `result_text`, so this command's stdout and `runner logs`'s later
     // retrieval show identical, clean text.
     println!("{}", signal::strip_trailer(&outcome.result.result));
     println!(

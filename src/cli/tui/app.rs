@@ -1,8 +1,9 @@
-//! Pure, terminal-free state for F-15's TUI. `handle_key` and `App::apply`
+//! Pure, terminal-free state for the TUI. `handle_key` and `App::apply`
 //! are plain data transformations with no I/O, so they're directly
-//! unit-testable without a real terminal — the same DI-testing pattern
-//! this project already uses in `retry.rs`/`persist.rs`/`cron_engine.rs`,
-//! just via "keep it pure" rather than an injected closure this time.
+//! unit-testable without a real terminal — the same "keep the decision
+//! logic pure, push I/O to the edges" shape used elsewhere in this
+//! codebase (`retry.rs`, `persist.rs`, `cron_engine.rs`), just via a
+//! plain struct instead of an injected closure this time.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use rusqlite::Connection;
@@ -35,10 +36,8 @@ impl App {
     }
 
     /// The only store call this whole module makes, and it's read-only —
-    /// SPEC.md AC-04 requires this as a structural property (no write-path
-    /// store function reachable from the TUI at all), not just a behavioral
-    /// one, so there's deliberately no other function in `cli::tui` that
-    /// touches `conn`.
+    /// no write-path store function is reachable from anywhere else in
+    /// `cli::tui`, as a structural property, not just a behavioral one.
     pub fn refresh(&mut self, conn: &Connection) -> Result<(), String> {
         self.runs = runs::list(conn, LIST_LIMIT).map_err(|e| e.to_string())?;
         if self.selected >= self.runs.len() {
@@ -74,10 +73,9 @@ impl Default for App {
     }
 }
 
-/// `q` or Ctrl+C exits (SPEC.md AC-05); up/down move the selection, which
-/// drives the always-visible detail pane (AC-03's "or equivalent" — the
-/// detail pane tracks the current selection live rather than requiring a
-/// separate Enter-to-open step).
+/// `q` or Ctrl+C exits; up/down move the selection, which drives the
+/// always-visible detail pane — it tracks the current selection live
+/// rather than requiring a separate Enter-to-open step.
 pub fn handle_key(key: KeyEvent) -> Action {
     match key.code {
         KeyCode::Char('q') => Action::Quit,

@@ -1,7 +1,7 @@
-//! Embedded SQLite store (F-07) — schema init/migration + shared
-//! connection handling. This module tree is Runner's *only* code path
-//! that touches the database (SPEC.md AC-04) — no raw SQL string-building
-//! anywhere outside `store/runs.rs`/`store/schedules.rs`.
+//! Embedded SQLite store — schema init/migration + shared connection
+//! handling. This module tree is the only code path that touches the
+//! database — no raw SQL string-building anywhere outside
+//! `store/runs.rs`/`store/schedules.rs`.
 
 use rusqlite::Connection;
 
@@ -13,13 +13,12 @@ pub mod schedules;
 /// so a future migration has a version to branch on, not because anything
 /// reads it yet. Every bump so far has edited the `CREATE TABLE` statement
 /// directly rather than an `ALTER TABLE` migration path — safe and correct
-/// only because Stage 1 has never been released, so no real `runner.db`
-/// exists anywhere with an older shape to migrate from:
-///   - v2 (F-08): added `runs.owner_pid`.
-///   - v3 (F-12): added `runs.result_text` — F-07's original column list
-///     never included anywhere to store the actual claude response text,
-///     making "print the full result on success" (F-12 AC-01) literally
-///     unimplementable until this was added. See `DICT.md`.
+/// only as long as no real `runner.db` exists anywhere with an older shape
+/// to migrate from:
+///   - v2: added `runs.owner_pid`, so startup reconciliation can tell a
+///     still-in-flight run from one abandoned by a dead process.
+///   - v3: added `runs.result_text` — the original column list had
+///     nowhere to store the agent's actual response text.
 const SCHEMA_VERSION: i64 = 3;
 
 #[derive(Debug)]
@@ -50,8 +49,8 @@ impl From<rusqlite::Error> for StoreError {
 }
 
 /// Opens (creating `$RUNNER_HOME` and the DB file if necessary) the store
-/// at `$RUNNER_HOME/runner.db`, applying schema idempotently on every call
-/// (SPEC.md AC-01).
+/// at `$RUNNER_HOME/runner.db`, applying schema idempotently on every
+/// call.
 pub fn open() -> Result<Connection, StoreError> {
     crate::paths::ensure_runner_home()?;
     let conn = Connection::open(crate::paths::db_file())?;
@@ -133,7 +132,7 @@ mod tests {
     #[test]
     fn migrate_is_idempotent() {
         let conn = open_in_memory();
-        // Running it again must not error (SPEC.md AC-01).
+        // Running it again must not error.
         migrate(&conn).unwrap();
         migrate(&conn).unwrap();
     }

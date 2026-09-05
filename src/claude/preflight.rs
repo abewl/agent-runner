@@ -1,11 +1,11 @@
-//! Local ambient-auth preflight check (F-03).
+//! Local ambient-auth preflight check.
 //!
 //! Confirms `claude` resolves on PATH and appears to have a usable login
-//! session, before any subprocess is spawned to do actual work (that
-//! subprocess spawn is F-04's job — this module only checks, it never
-//! invokes `claude` for real work itself). No credential injection or
-//! credential file handling of any kind — Stage 1 trusts whatever `claude`
-//! login state already exists on the machine.
+//! session, before any subprocess is spawned to do actual work — this
+//! module only checks, it never invokes `claude` for real work itself.
+//! No credential injection or credential file handling of any kind —
+//! Runner trusts whatever `claude` login state already exists on the
+//! machine.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -40,16 +40,14 @@ impl fmt::Display for PreflightError {
     }
 }
 
-/// Runs before any `claude` subprocess is spawned for real work
-/// (SPEC.md F-03 AC-01/AC-02). PATH resolution is checked first via a
-/// plain directory scan — no subprocess spawn attempted for this check at
-/// all — then macOS Keychain presence of the login credential entry.
+/// Runs before any `claude` subprocess is spawned for real work. PATH
+/// resolution is checked first via a plain directory scan — no subprocess
+/// spawn attempted for this check at all — then macOS Keychain presence
+/// of the login credential entry.
 ///
-/// AC-03 (recording a preflight failure's distinct category on a `runs`
-/// row) can't be implemented or tested until F-08's persistence layer
-/// exists; `PreflightError` is already a type distinct from whatever error
-/// F-04's subprocess runner produces, so F-08 has a clean category to map
-/// once it lands — see `FEATURE.md`'s F-03 completion note.
+/// `PreflightError` is a distinct type from whatever error the subprocess
+/// runner itself produces, so a caller can always tell "never even tried
+/// to run claude" from "tried and it failed."
 pub fn check() -> Result<(), PreflightError> {
     check_with(CLAUDE_BIN, KEYCHAIN_SERVICE)
 }
@@ -144,8 +142,8 @@ mod tests {
 
     // `check()`/`check_with` parameterized on bin name and keychain
     // service specifically so both failure branches are testable without
-    // touching the real, process-global PATH env var (see DICT.md
-    // "Testing conventions" for why that's worth avoiding).
+    // mutating the real, process-global PATH env var — a shared mutable
+    // global that other tests running in parallel would race on.
 
     #[test]
     fn check_with_fails_claude_not_found_when_binary_is_missing() {

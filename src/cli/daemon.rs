@@ -1,4 +1,4 @@
-//! `runner daemon start|stop|status` command implementations (F-01, F-02).
+//! `runner daemon start|stop|status` command implementations.
 
 use std::fs::OpenOptions;
 use std::path::PathBuf;
@@ -15,14 +15,14 @@ const STOP_POLL_INTERVAL: Duration = Duration::from_millis(100);
 ///
 /// On success in the *original* foreground process, this function never
 /// actually returns: `daemonize::Daemonize::start()` calls `exit()`
-/// internally for the parent, which is exactly what makes control return to
-/// the shell immediately (SPEC.md F-01 AC-02). Only the detached child
-/// continues past `.start()` — from its point of view this function runs
-/// the daemon body and returns once the daemon has shut down.
+/// internally for the parent, which is exactly what makes control return
+/// to the shell immediately. Only the detached child continues past
+/// `.start()` — from its point of view this function runs the daemon
+/// body and returns once the daemon has shut down.
 ///
 /// `repo`, when given (`--repo <path>`), is validated and persisted via
 /// `config::set_repo_path` *before* anything else — a validation failure
-/// must prevent the daemon from starting at all (SPEC.md F-02 AC-03).
+/// must prevent the daemon from starting at all.
 pub fn start(repo: Option<PathBuf>) -> Result<(), String> {
     paths::ensure_runner_home().map_err(|e| format!("failed to create RUNNER_HOME: {e}"))?;
 

@@ -1,6 +1,6 @@
-//! Typed CRUD for the `runs` table (F-07). Only this file builds SQL
-//! against `runs` — always parameterized, never string-built from
-//! caller-supplied values (SPEC.md AC-04).
+//! Typed CRUD for the `runs` table. Only this file builds SQL against
+//! `runs` — always parameterized, never string-built from caller-supplied
+//! values.
 
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -35,8 +35,7 @@ impl RunStatus {
     }
 }
 
-/// The canonical way to display a status anywhere in the codebase (F-11's
-/// `runner status`, F-12's `runner logs`, eventually F-15's TUI) — reuses
+/// The canonical way to display a status anywhere in the codebase — reuses
 /// the same strings the DB itself stores, via `as_str`.
 impl std::fmt::Display for RunStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -59,20 +58,16 @@ pub struct Run {
     pub next_action: Option<String>,
     pub next_action_reason: Option<String>,
     pub recheck_after: Option<String>,
-    /// The OS pid of the `runner` process that created this row — added in
-    /// F-08 (not part of F-07's original column list) specifically so
-    /// startup reconciliation (SPEC.md F-08 AC-04) can tell a genuinely
-    /// still-in-flight run (its owning process is alive) from one
-    /// abandoned by a process that died mid-run, rather than assuming
-    /// every `running` row found at startup is automatically stale — a
-    /// concurrently-running daemon tick could easily leave a legitimate
-    /// one for a `runner status` invocation to see. See `DICT.md`.
+    /// The OS pid of the `runner` process that created this row — lets
+    /// startup reconciliation tell a genuinely still-in-flight run (its
+    /// owning process is alive) from one abandoned by a process that died
+    /// mid-run, rather than assuming every `running` row found at startup
+    /// is automatically stale — a concurrently-running daemon tick could
+    /// easily leave a legitimate one for a `runner status` invocation to
+    /// see.
     pub owner_pid: i64,
-    /// The agent's raw response text on a successful run — added in F-12
-    /// (not part of F-07's original column list, which had nowhere at all
-    /// to store this, making "print the full result" unimplementable
-    /// until now). `None` for `running`/`failed`/`interrupted` rows. See
-    /// `DICT.md`.
+    /// The agent's raw response text on a successful run. `None` for
+    /// `running`/`failed`/`interrupted` rows.
     pub result_text: Option<String>,
 }
 
@@ -114,9 +109,9 @@ fn row_to_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<Run> {
     })
 }
 
-/// Inserts a new `runs` row with `status = running` — a run is always
-/// created in this state (F-08 AC-01 inserts before the subprocess even
-/// starts); there's no code path that creates a row in any other status.
+/// Inserts a new `runs` row with `status = running`, before the claude
+/// subprocess even starts — there's no code path that creates a row in
+/// any other status.
 pub fn create(conn: &Connection, new_run: &NewRun) -> Result<(), StoreError> {
     conn.execute(
         "INSERT INTO runs (id, task_identity, task, status, started_at, retry_count, owner_pid) VALUES (?1, ?2, ?3, 'running', ?4, 0, ?5)",
@@ -134,7 +129,7 @@ pub fn create(conn: &Connection, new_run: &NewRun) -> Result<(), StoreError> {
 /// Marks a run done with its full result — session id, cost, and the
 /// parsed continuation signal (already converted to an absolute
 /// `recheck_after` timestamp by the caller). Updates the row exactly
-/// once — never a second insert (SPEC.md AC-02/AC-03).
+/// once — never a second insert.
 #[allow(clippy::too_many_arguments)]
 pub fn mark_done(
     conn: &Connection,
@@ -165,7 +160,7 @@ pub fn mark_done(
     Ok(())
 }
 
-/// Marks a run failed — both attempts (SPEC.md F-06) exhausted.
+/// Marks a run failed — both retry attempts exhausted.
 /// `next_action`/`next_action_reason`/`recheck_after` are left null, since
 /// a failed run produced no valid signal to persist.
 pub fn mark_failed(
@@ -212,10 +207,10 @@ pub fn list_running(conn: &Connection) -> Result<Vec<Run>, StoreError> {
         .map_err(StoreError::from)
 }
 
-/// Bare status update — the minimal "update" CRUD operation this feature
-/// needs (SPEC.md AC-04). F-08 adds richer, purpose-specific updates
-/// (marking done with the full result, reconciling interrupted runs) on
-/// top of this, since those need more fields set atomically together.
+/// Bare status update. `mark_done`/`mark_failed` handle the richer,
+/// purpose-specific updates (setting the full result, or reconciling
+/// interrupted runs) that need more fields set atomically together —
+/// this one is for the minimal case that doesn't.
 pub fn update_status(conn: &Connection, id: &str, status: RunStatus) -> Result<(), StoreError> {
     conn.execute(
         "UPDATE runs SET status = ?2 WHERE id = ?1",
@@ -224,10 +219,10 @@ pub fn update_status(conn: &Connection, id: &str, status: RunStatus) -> Result<(
     Ok(())
 }
 
-/// Most recent `done` row for a task identity — F-09's resume/continuation
+/// Most recent `done` row for a task identity — the resume/continuation
 /// lookup. `failed`/`interrupted` rows never qualify, even if more recent
-/// than the last `done` one (SPEC.md F-09 AC-03) — the `WHERE status =
-/// 'done'` filter applies before the ordering, not after.
+/// than the last `done` one — the `WHERE status = 'done'` filter applies
+/// before the ordering, not after.
 pub fn most_recent_done_for_task(
     conn: &Connection,
     task_identity: &str,

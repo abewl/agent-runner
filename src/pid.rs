@@ -1,4 +1,4 @@
-//! PID file read/liveness helpers shared by `runner daemon start|stop|status` (F-01).
+//! PID file read/liveness helpers shared by `runner daemon start|stop|status`.
 
 use std::fs;
 use std::path::Path;

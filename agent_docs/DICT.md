@@ -2,39 +2,58 @@
 
 Project-specific patterns, naming conventions, and function signatures. Updated by CLAUDE-PM when a feature introduces or deprecates a pattern. Claude-as-engineer reads this before implementing; does not edit directly.
 
-**Last updated:** 2026-09-01
+**Last updated:** 2026-09-05
 
 ---
 
 ## Repo layout
 
+Restructured in a post-F-15 DX/consolidation pass (no functional change,
+full test suite re-verified before and after): the `claude` invocation
+trio (`preflight`/`process`/`signal`) moved from flat top-level modules
+into a `claude/` folder so their relationship is visible in the tree
+instead of inferred, and the single-function `lookup.rs` (one caller,
+`persist.rs`) was folded directly into `persist.rs` rather than kept as
+its own module.
+
 ```
 Cargo.toml        — binary crate, package name "runner"
 src/
-  main.rs          — CLI entrypoint (clap dispatch) [F-01]
-  paths.rs         — RUNNER_HOME resolution + derived paths (pid file, log file, log dir) [F-01]
-  pid.rs           — pid-file read + liveness-check helpers, shared by cli/daemon.rs [F-01]
+  main.rs          — CLI entrypoint (clap dispatch)
+  paths.rs         — RUNNER_HOME resolution + derived paths (pid file, log file, log dir)
+  pid.rs           — pid-file read + liveness-check helpers, shared by cli/daemon.rs
   daemon.rs         — the daemon process body once detached: logging init, signal-handler
                       registration (before the pid file is written — see "Signal handlers
-                      before pid file" below), pid file write, caffeinate spawn, shutdown
-                      wait, cleanup. Cron ticker lands here too at F-14. [F-01, F-14]
+                      before pid file" below), pid file write, caffeinate spawn, cron
+                      ticker spawn, shutdown wait, cleanup.
   cli/             — subcommand implementations
     mod.rs
-    daemon.rs        — `runner daemon start|stop|status` [F-01]
-    (repo, run, status, logs, cron, tui — F-02, F-10–15)
-  config.rs         — F-02 target-repo config file (read/write $RUNNER_HOME/config.toml)
-  runner.rs         — the "run one claude turn" pipeline (preflight → continuation lookup → subprocess → signal parse → retry → persist)
-  preflight.rs      — F-03 ambient-auth check
-  process.rs        — F-04 claude subprocess spawn + result/session/cost parsing
-  signal.rs         — F-05 continuation-signal trailer: prompt-template construction + NEXT_ACTION/RECHECK_AFTER parsing, plus strip_trailer (F-12) for display/storage contexts that show the parsed signal separately
+    daemon.rs        — `runner daemon start|stop|status`
+    display.rs       — shared formatting (truncate, format_run_detail) used by
+                        status/logs/cron/tui
+    (repo, run, status, logs, cron)
+    tui/            — `runner log` (ratatui dashboard, read-only)
+      mod.rs          — terminal setup/render/event-loop
+      app.rs          — pure, terminal-free state (App, handle_key)
+  config.rs         — target-repo config file (read/write $RUNNER_HOME/config.toml)
+  claude/           — everything about talking to the `claude` CLI
+    mod.rs
+    preflight.rs      — ambient-auth check (PATH + Keychain)
+    process.rs        — claude subprocess spawn + result/session/cost parsing
+    signal.rs         — continuation-signal trailer: prompt-template construction +
+                        NEXT_ACTION/RECHECK_AFTER parsing, plus strip_trailer for
+                        display/storage contexts that show the parsed signal separately
+  retry.rs          — bounded retry wrapping one claude invocation + signal parse
+  persist.rs        — resume/continuation lookup, run lifecycle persistence
+                      (insert running → retry pipeline → mark done/failed),
+                      startup reconciliation of orphaned running rows
   store/
-    mod.rs           — F-07 SQLite init/migration + shared connection handling
+    mod.rs           — SQLite init/migration + shared connection handling
     runs.rs          — typed CRUD for the `runs` table
     schedules.rs      — typed CRUD for the `schedules` table
-  cron_engine.rs     — F-14 tick loop + cron expression evaluation + recheck_after gating
-  tui/              — F-15 ratatui view + input handling (read-only)
+  cron_engine.rs     — tick loop + cron expression evaluation + recheck_after gating
 tests/
-  daemon_lifecycle.rs — F-01 integration tests, driving the compiled binary via
+  daemon_lifecycle.rs — integration tests driving the compiled binary via
                         `env!("CARGO_BIN_EXE_runner")`, one isolated `RUNNER_HOME`
                         temp dir per test
 ```

@@ -1,15 +1,14 @@
-//! Bounded retry wrapping one claude invocation (F-04) plus its
-//! continuation-signal parse (F-05) — F-06. Exactly one automatic retry
-//! when F-04 fails outright, *or* when F-05 can't find a `NEXT_ACTION`
+//! Bounded retry wrapping one claude invocation plus its continuation-
+//! signal parse. Exactly one automatic retry when the subprocess itself
+//! fails outright, *or* when the signal parser can't find a `NEXT_ACTION`
 //! line in an otherwise-successful result: both count as "didn't get a
-//! usable response," one retry bucket (SPEC.md AC-01). Not a
-//! backoff/supervisor policy — just enough resilience to absorb a single
-//! flaky invocation.
+//! usable response," one retry bucket. Not a backoff/supervisor policy —
+//! just enough resilience to absorb a single flaky invocation.
 
 use std::path::Path;
 
-use crate::process::{self, ClaudeError, ClaudeResult};
-use crate::signal::{self, ContinuationSignal, SignalParseError};
+use crate::claude::process::{self, ClaudeError, ClaudeResult};
+use crate::claude::signal::{self, ContinuationSignal, SignalParseError};
 
 #[derive(Debug, PartialEq)]
 pub enum RunFailure {
@@ -27,7 +26,7 @@ impl std::fmt::Display for RunFailure {
 }
 
 /// Both attempts' failures — the caller sees why the *second* try failed
-/// too, not just the first (SPEC.md AC-02).
+/// too, not just the first.
 #[derive(Debug, PartialEq)]
 pub struct RetryExhausted {
     pub first: RunFailure,
@@ -49,14 +48,12 @@ pub struct RunOutcome {
     pub result: ClaudeResult,
     pub signal: ContinuationSignal,
     /// Whether the first attempt failed and this outcome came from the
-    /// retry — available for F-08 to persist as `runs.retry_count`
-    /// (SPEC.md AC-03).
+    /// retry — persisted as `runs.retry_count`.
     pub retried: bool,
 }
 
-/// Real entry point — runs one claude turn (F-04) and parses its
-/// continuation signal (F-05), retrying exactly once if either step
-/// fails.
+/// Real entry point — runs one claude turn and parses its continuation
+/// signal, retrying exactly once if either step fails.
 pub fn run_with_retry(
     prompt: &str,
     resume: Option<&str>,

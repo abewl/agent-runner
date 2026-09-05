@@ -1,7 +1,8 @@
-//! Wires F-06's retry pipeline to F-07's store — run lifecycle persistence
-//! (F-08). A `runs` row is inserted (`status = running`, `owner_pid` =
+//! Run lifecycle: look up whether a task has a prior session to resume,
+//! execute one claude turn through the retry pipeline, and persist the
+//! result. A `runs` row is inserted (`status = running`, `owner_pid` =
 //! this process) before the claude subprocess starts, and updated exactly
-//! once on completion.
+//! once on completion — never a second insert.
 
 use std::path::Path;
 
@@ -12,6 +13,37 @@ use uuid::Uuid;
 use crate::retry::{self, RetryExhausted, RunOutcome};
 use crate::store::StoreError;
 use crate::store::runs::{self, NewRun};
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Continuation {
+    pub session_id: Option<String>,
+    pub context_line: Option<String>,
+}
+
+/// Most recent `done` run for `task_identity`, formatted as a resume
+/// target. Failed/interrupted rows never qualify, even if more recent —
+/// a task with no prior success gets an empty `Continuation`: no
+/// `--resume`, no context line, a fresh session.
+pub fn lookup(conn: &Connection, task_identity: &str) -> Result<Continuation, StoreError> {
+    let Some(row) = runs::most_recent_done_for_task(conn, task_identity)? else {
+        return Ok(Continuation::default());
+    };
+
+    let context_line =
+        row.next_action
+            .as_ref()
+            .map(|next_action| match row.next_action_reason.as_deref() {
+                Some(reason) if !reason.is_empty() => {
+                    format!("Your own last recommendation was: {next_action} — {reason}")
+                }
+                _ => format!("Your own last recommendation was: {next_action}"),
+            });
+
+    Ok(Continuation {
+        session_id: row.session_id,
+        context_line,
+    })
+}
 
 #[derive(Debug)]
 pub enum PersistedRunError {
@@ -34,12 +66,10 @@ impl From<StoreError> for PersistedRunError {
     }
 }
 
-/// Runs one claude turn (F-06's retry pipeline) with full lifecycle
+/// Runs one claude turn through the retry pipeline with full lifecycle
 /// persistence. `task` is the raw task text stored in `runs.task`; `prompt`
-/// is the already-built full prompt (trailer included, per F-05) actually
-/// sent to `claude` — this function doesn't build prompts itself, that's
-/// the caller's job (F-10), keeping this module about persistence wiring
-/// only, not prompt construction.
+/// is the already-built full prompt (trailer included) actually sent to
+/// `claude` — the caller builds prompts, this function only persists.
 pub fn run_and_persist(
     conn: &Connection,
     task_identity: &str,
@@ -88,14 +118,13 @@ fn run_and_persist_using(
                 .recheck_after
                 .map(|d| (Utc::now() + d).to_rfc3339());
 
-            // Stored stripped of the NEXT_ACTION/RECHECK_AFTER trailer
-            // (crate::signal::strip_trailer) — those fields already have
-            // their own columns; keeping them duplicated inside the
-            // stored text too would just be clutter, and F-12's `runner
-            // logs` and F-10's immediate stdout would otherwise need to
-            // strip it themselves independently instead of sharing one
-            // already-clean value.
-            let result_text = crate::signal::strip_trailer(&outcome.result.result);
+            // Stored stripped of the NEXT_ACTION/RECHECK_AFTER trailer —
+            // those fields already have their own columns, so keeping them
+            // duplicated inside the stored text too would just be clutter,
+            // and every reader of `result_text` would otherwise need to
+            // strip it themselves instead of sharing one already-clean
+            // value.
+            let result_text = crate::claude::signal::strip_trailer(&outcome.result.result);
 
             runs::mark_done(
                 conn,
@@ -122,10 +151,10 @@ fn run_and_persist_using(
 
 /// Reconciles any `runs` row still `status = running` whose owning
 /// process is confirmed not alive to `status = interrupted` — startup-time
-/// cleanup, never automatic resumption (SPEC.md AC-04). Deliberately does
-/// *not* assume every `running` row found is stale: a concurrently active
-/// daemon tick can legitimately leave one for a separate `runner status`
-/// invocation to see, so each row's `owner_pid` is checked individually.
+/// cleanup, never automatic resumption. Deliberately does *not* assume
+/// every `running` row found is stale: a concurrently active daemon tick
+/// can legitimately leave one for a separate `runner status` invocation
+/// to see, so each row's `owner_pid` is checked individually.
 pub fn reconcile_interrupted_runs(conn: &Connection) -> Result<usize, StoreError> {
     let running = runs::list_running(conn)?;
     let mut reconciled = 0;
@@ -141,8 +170,9 @@ pub fn reconcile_interrupted_runs(conn: &Connection) -> Result<usize, StoreError
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::process::ClaudeResult;
-    use crate::signal::ContinuationSignal;
+    use crate::claude::process::ClaudeResult;
+    use crate::claude::signal::ContinuationSignal;
+    use crate::store::runs::RunStatus;
     use std::time::Duration;
 
     fn open_in_memory() -> Connection {
@@ -150,6 +180,196 @@ mod tests {
         crate::store::migrate(&conn).unwrap();
         conn
     }
+
+    // --- lookup ---
+
+    #[test]
+    fn lookup_no_prior_run_gives_an_empty_continuation() {
+        let conn = open_in_memory();
+        let continuation = lookup(&conn, "never-run-before").unwrap();
+        assert_eq!(continuation, Continuation::default());
+    }
+
+    #[test]
+    fn lookup_only_failed_or_interrupted_rows_gives_an_empty_continuation() {
+        let conn = open_in_memory();
+        runs::create(
+            &conn,
+            &NewRun {
+                id: "r1",
+                task_identity: "t",
+                task: "task",
+                started_at: "2026-09-01T00:00:00Z",
+                owner_pid: 1,
+            },
+        )
+        .unwrap();
+        runs::update_status(&conn, "r1", RunStatus::Failed).unwrap();
+
+        runs::create(
+            &conn,
+            &NewRun {
+                id: "r2",
+                task_identity: "t",
+                task: "task",
+                started_at: "2026-09-01T00:01:00Z",
+                owner_pid: 1,
+            },
+        )
+        .unwrap();
+        runs::update_status(&conn, "r2", RunStatus::Interrupted).unwrap();
+
+        assert_eq!(lookup(&conn, "t").unwrap(), Continuation::default());
+    }
+
+    #[test]
+    fn lookup_done_row_supplies_session_id_and_formatted_context_line() {
+        let conn = open_in_memory();
+        runs::create(
+            &conn,
+            &NewRun {
+                id: "r1",
+                task_identity: "t",
+                task: "task",
+                started_at: "2026-09-01T00:00:00Z",
+                owner_pid: 1,
+            },
+        )
+        .unwrap();
+        runs::mark_done(
+            &conn,
+            "r1",
+            Some("sess-abc"),
+            0.01,
+            "2026-09-01T00:01:00Z",
+            0,
+            "idle",
+            "nothing left to do",
+            None,
+            "the result text",
+        )
+        .unwrap();
+
+        let continuation = lookup(&conn, "t").unwrap();
+        assert_eq!(continuation.session_id, Some("sess-abc".to_string()));
+        assert_eq!(
+            continuation.context_line,
+            Some("Your own last recommendation was: idle — nothing left to do".to_string())
+        );
+    }
+
+    #[test]
+    fn lookup_empty_reason_omits_the_separator_rather_than_a_trailing_dash() {
+        let conn = open_in_memory();
+        runs::create(
+            &conn,
+            &NewRun {
+                id: "r1",
+                task_identity: "t",
+                task: "task",
+                started_at: "2026-09-01T00:00:00Z",
+                owner_pid: 1,
+            },
+        )
+        .unwrap();
+        runs::mark_done(
+            &conn,
+            "r1",
+            Some("sess-abc"),
+            0.0,
+            "2026-09-01T00:01:00Z",
+            0,
+            "idle",
+            "",
+            None,
+            "the result text",
+        )
+        .unwrap();
+
+        let continuation = lookup(&conn, "t").unwrap();
+        assert_eq!(
+            continuation.context_line,
+            Some("Your own last recommendation was: idle".to_string())
+        );
+    }
+
+    #[test]
+    fn lookup_failed_row_after_a_done_one_does_not_shadow_it() {
+        let conn = open_in_memory();
+        runs::create(
+            &conn,
+            &NewRun {
+                id: "done-first",
+                task_identity: "t",
+                task: "task",
+                started_at: "2026-09-01T00:00:00Z",
+                owner_pid: 1,
+            },
+        )
+        .unwrap();
+        runs::mark_done(
+            &conn,
+            "done-first",
+            Some("sess-good"),
+            0.0,
+            "2026-09-01T00:01:00Z",
+            0,
+            "continue_engineer",
+            "more to do",
+            None,
+            "the result text",
+        )
+        .unwrap();
+
+        runs::create(
+            &conn,
+            &NewRun {
+                id: "failed-after",
+                task_identity: "t",
+                task: "task",
+                started_at: "2026-09-01T00:05:00Z",
+                owner_pid: 1,
+            },
+        )
+        .unwrap();
+        runs::update_status(&conn, "failed-after", RunStatus::Failed).unwrap();
+
+        let continuation = lookup(&conn, "t").unwrap();
+        assert_eq!(continuation.session_id, Some("sess-good".to_string()));
+    }
+
+    #[test]
+    fn lookup_is_scoped_to_the_given_task_identity() {
+        let conn = open_in_memory();
+        runs::create(
+            &conn,
+            &NewRun {
+                id: "r1",
+                task_identity: "other-task",
+                task: "task",
+                started_at: "2026-09-01T00:00:00Z",
+                owner_pid: 1,
+            },
+        )
+        .unwrap();
+        runs::mark_done(
+            &conn,
+            "r1",
+            Some("sess-other"),
+            0.0,
+            "2026-09-01T00:01:00Z",
+            0,
+            "idle",
+            "",
+            None,
+            "the result text",
+        )
+        .unwrap();
+
+        assert_eq!(lookup(&conn, "t").unwrap(), Continuation::default());
+    }
+
+    // --- run_and_persist ---
 
     fn ok_outcome(next_action: &str, recheck_after: Option<Duration>) -> RunOutcome {
         RunOutcome {
@@ -233,10 +453,11 @@ mod tests {
         let err = run_and_persist_using(&conn, "t", "task", || {
             Err(RetryExhausted {
                 first: retry::RunFailure::SignalParse(
-                    crate::signal::parse_continuation_signal("no trailer").unwrap_err(),
+                    crate::claude::signal::parse_continuation_signal("no trailer").unwrap_err(),
                 ),
                 second: retry::RunFailure::SignalParse(
-                    crate::signal::parse_continuation_signal("still no trailer").unwrap_err(),
+                    crate::claude::signal::parse_continuation_signal("still no trailer")
+                        .unwrap_err(),
                 ),
             })
         })
@@ -253,6 +474,8 @@ mod tests {
         assert_eq!(row.next_action, None);
         assert_eq!(row.recheck_after, None);
     }
+
+    // --- reconcile_interrupted_runs ---
 
     #[test]
     fn reconcile_marks_only_rows_owned_by_dead_processes() {

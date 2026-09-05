@@ -1,9 +1,8 @@
 //! Small presentation-layer helpers shared across CLI commands that print
-//! tabular output (F-11's `runner status`, F-13's `runner cron list`), and
-//! — as of F-15 — across the CLI and the TUI (`crate::tui`), which is why
-//! this module is `pub(crate)` rather than private to `cli`. Still not a
-//! capability anything should reach for casually: it's formatting, not
-//! logic.
+//! tabular output (`runner status`, `runner cron list`) and across the
+//! CLI and the TUI (`crate::cli::tui`), which is why this module is
+//! `pub(crate)` rather than private to `cli`. Still not a capability
+//! anything should reach for casually: it's formatting, not logic.
 
 use crate::store::runs::{Run, RunStatus};
 
@@ -20,9 +19,9 @@ pub fn truncate(s: &str, max: usize) -> String {
 }
 
 /// The result/failure detail plus signal fields for a single run — shared
-/// by F-12's `runner logs` and F-15's TUI detail pane, which SPEC.md's
-/// AC-03 explicitly requires show "the same data `runner logs` would
-/// print." One formatter, not two copies that could drift apart.
+/// by `runner logs` and the TUI's detail pane, so both show identical
+/// content from one formatter instead of two copies that could drift
+/// apart.
 pub fn format_run_detail(run: &Run) -> String {
     let mut lines = Vec::new();
 

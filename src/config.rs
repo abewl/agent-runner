@@ -1,4 +1,4 @@
-//! Target repo configuration — `$RUNNER_HOME/config.toml` (F-02).
+//! Target repo configuration — `$RUNNER_HOME/config.toml`.
 //!
 //! Stage 1 supports exactly one configured repo at a time, machine-wide.
 //! Setting a new one replaces the old value; there is no list.
@@ -69,8 +69,8 @@ pub fn save(config: &Config) -> std::io::Result<()> {
 /// Validates `path` as a target repo: must exist, be a directory, and
 /// contain `agent_docs/AGENT.md`. Returns the canonicalized absolute path
 /// on success. Performs no writes — callers decide whether/when to persist
-/// the result (SPEC.md F-02 AC-01: a validation failure must leave no
-/// config written).
+/// the result, so a validation failure never leaves a partial config
+/// written.
 pub fn validate_repo_path(path: &Path) -> Result<PathBuf, RepoValidationError> {
     if !path.exists() {
         return Err(RepoValidationError::NotFound(path.to_path_buf()));

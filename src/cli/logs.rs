@@ -1,4 +1,4 @@
-//! `runner logs <run-id>` command implementation (F-12).
+//! `runner logs <run-id>` command implementation.
 
 use crate::cli::display::format_run_detail;
 use crate::store::runs;

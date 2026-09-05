@@ -1,4 +1,4 @@
-//! `runner status` (alias `runner ps`) command implementation (F-11).
+//! `runner status` (alias `runner ps`) command implementation.
 
 use chrono::{DateTime, Utc};
 
@@ -42,8 +42,8 @@ pub fn status(running_only: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// `started_at`/`ended_at` are RFC3339 strings (SPEC.md's "TEXT ISO-8601"
-/// columns). Duration is `ended_at - started_at` for a terminal run, or
+/// `started_at`/`ended_at` are RFC3339 strings. Duration is
+/// `ended_at - started_at` for a terminal run, or
 /// `now - started_at` (elapsed so far) for one still `running`. Falls back
 /// to `"?"` rather than panicking if either timestamp somehow fails to
 /// parse — display-layer defensiveness, not a claim it should ever happen.

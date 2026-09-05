@@ -1,5 +1,6 @@
-//! Typed CRUD for the `schedules` table (F-07). Only this file builds SQL
-//! against `schedules` — always parameterized (SPEC.md AC-04).
+//! Typed CRUD for the `schedules` table. Only this file builds SQL
+//! against `schedules` — always parameterized, never string-built from
+//! caller-supplied values.
 
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -50,9 +51,9 @@ pub fn create(conn: &Connection, new_schedule: &NewSchedule) -> Result<(), Store
     Ok(())
 }
 
-// `read` isn't called from production code yet — no current caller needs
-// a single schedule by id (F-13's CLI only needs `list`/`create`/`delete`;
-// F-14's tick engine iterates all of them via `list`).
+// `read` isn't called from production code yet — the CLI only needs
+// `list`/`create`/`delete`, and the tick engine iterates all schedules
+// via `list` rather than looking any single one up by id.
 #[allow(dead_code)]
 pub fn read(conn: &Connection, id: &str) -> Result<Option<Schedule>, StoreError> {
     conn.query_row(
@@ -85,9 +86,9 @@ pub fn update_last_run_at(
     Ok(())
 }
 
-/// Deletes by id. Returns whether a row was actually deleted, so callers
-/// (F-13's `runner cron remove`) can tell "removed" from "no such id"
-/// rather than silently succeeding either way.
+/// Deletes by id. Returns whether a row was actually deleted, so
+/// `runner cron remove` can tell "removed" from "no such id" rather than
+/// silently succeeding either way.
 pub fn delete(conn: &Connection, id: &str) -> Result<bool, StoreError> {
     let affected = conn.execute("DELETE FROM schedules WHERE id = ?1", params![id])?;
     Ok(affected > 0)

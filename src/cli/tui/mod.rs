@@ -1,5 +1,5 @@
-//! `runner log` (F-15) — a read-only `ratatui` dashboard over the same
-//! store `runner status`/`runner logs` read. Terminal setup/teardown lives
+//! `runner log` — a read-only `ratatui` dashboard over the same store
+//! `runner status`/`runner logs` read. Terminal setup/teardown lives
 //! here; all state and key-handling logic lives in `app` (kept pure and
 //! terminal-free so it's unit-testable without a real terminal — see
 //! `app`'s own doc comment).
@@ -40,11 +40,11 @@ pub fn run() -> Result<(), String> {
         Err(e) => Err(e.to_string()),
     };
 
-    // Guaranteed teardown (SPEC.md AC-05: "fully restores the terminal to
-    // its prior state") regardless of how `run_app` above returned —
-    // deliberately best-effort (`let _`) so a teardown failure never masks
-    // whatever error `run_app` itself produced, and both steps still run
-    // even if entering the alternate screen above never succeeded.
+    // Guaranteed teardown — fully restores the terminal regardless of how
+    // `run_app` above returned. Deliberately best-effort (`let _`) so a
+    // teardown failure never masks whatever error `run_app` itself
+    // produced, and both steps still run even if entering the alternate
+    // screen above never succeeded.
     let _ = disable_raw_mode();
     let _ = execute!(stdout, LeaveAlternateScreen);
 
@@ -64,10 +64,10 @@ fn run_app(stdout: &mut Stdout, conn: &Connection) -> Result<(), String> {
             .draw(|frame| draw(frame, &app))
             .map_err(|e| e.to_string())?;
 
-        // AC-02: refresh on a fixed poll interval without blocking key
-        // input — `event::poll` doubles as both the input wait and the
-        // refresh timer, rather than a separate sleep plus a non-blocking
-        // read (which would either miss keys or busy-loop).
+        // Refresh on a fixed poll interval without blocking key input —
+        // `event::poll` doubles as both the input wait and the refresh
+        // timer, rather than a separate sleep plus a non-blocking read
+        // (which would either miss keys or busy-loop).
         let timeout = REFRESH_INTERVAL.saturating_sub(last_refresh.elapsed());
 
         if event::poll(timeout).map_err(|e| e.to_string())?

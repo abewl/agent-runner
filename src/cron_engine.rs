@@ -1,5 +1,5 @@
-//! Cron expression parsing/validation (F-13; the tick-evaluation half is
-//! F-14). Runner accepts standard 5-field Unix cron syntax (minute hour
+//! Cron expression parsing/validation and the daemon's tick-evaluation
+//! loop. Runner accepts standard 5-field Unix cron syntax (minute hour
 //! day month day-of-week).
 //!
 //! **The `cron` crate itself requires a leading seconds field** (6 or 7
@@ -7,11 +7,11 @@
 //! README example uses 7: `sec min hour day month dow year`). A bare
 //! 5-field expression like `*/15 * * * *` fails to parse against it
 //! directly. Sub-minute precision isn't something this system has anyway
-//! — the daemon's own tick interval is fixed at 60s (see `DICT.md`) — so
-//! every expression Runner accepts is rewritten to 6-field by prepending a
-//! fixed `"0 "` seconds field before handing it to the `cron` crate. That
-//! rewrite is entirely internal; callers only ever see or type the
-//! standard 5-field form.
+//! — the daemon's own tick interval is fixed at 60s — so every expression
+//! Runner accepts is rewritten to 6-field by prepending a fixed `"0 "`
+//! seconds field before handing it to the `cron` crate. That rewrite is
+//! entirely internal; callers only ever see or type the standard 5-field
+//! form.
 
 use std::str::FromStr;
 
@@ -25,18 +25,18 @@ use crate::store::schedules::{self, Schedule as ScheduleRow};
 /// Daemon tick poll interval — how often it *checks* whether anything is
 /// due, not to be confused with `recheck_after` (a per-task hint for
 /// *skipping* an otherwise-due tick — see the doc comment on
-/// `process_one_schedule` and `DICT.md`'s "Cron tick interval" entry,
-/// which explicitly warns against conflating the two).
+/// `process_one_schedule`, which explicitly warns against conflating the
+/// two).
 pub const TICK_INTERVAL_SECS: u64 = 60;
 
-/// Validates a standard 5-field cron expression (SPEC.md F-13 AC-01).
+/// Validates a standard 5-field cron expression.
 pub fn validate(expr: &str) -> Result<(), String> {
     parse(expr).map(|_| ())
 }
 
-/// The same parsing `validate` performs is what F-14's tick engine will
-/// use to evaluate schedules — one parser, so an expression `runner cron
-/// add` accepts is guaranteed evaluable later, never a second parser that
+/// The same parsing `validate` performs is what the tick engine uses to
+/// evaluate schedules — one parser, so an expression `runner cron add`
+/// accepts is guaranteed evaluable later, never a second parser that
 /// could disagree with the first.
 pub(crate) fn parse(expr: &str) -> Result<Schedule, String> {
     let six_field = format!("0 {expr}");
@@ -83,7 +83,7 @@ pub fn tick_once(conn: &Connection) -> usize {
         return 0;
     };
 
-    if let Err(e) = crate::preflight::check() {
+    if let Err(e) = crate::claude::preflight::check() {
         tracing::warn!("cron tick: preflight failed, skipping this tick: {e}");
         return 0;
     }
@@ -143,18 +143,19 @@ fn process_one_schedule(
         return Ok(false);
     }
 
-    // AC-04: a schedule already running is skipped, independent of AC-02.
+    // A schedule already running is skipped, independent of the
+    // recheck_after check below.
     let running = crate::store::runs::list_running(conn).map_err(|e| e.to_string())?;
     if running.iter().any(|r| r.task_identity == schedule.id) {
         tracing::info!(schedule_id = %schedule.id, "cron: skipping tick, already running");
         return Ok(false);
     }
 
-    // AC-02/AC-03: a plain timestamp comparison against the most recent
-    // done run's recheck_after — never a branch on next_action's value.
-    // recheck_after is only ever set on `done` rows (F-08's mark_done);
-    // failed/running/interrupted rows always have it null, which is why
-    // this only needs to look at the most recent *done* run.
+    // A plain timestamp comparison against the most recent done run's
+    // recheck_after — never a branch on next_action's value.
+    // recheck_after is only ever set on `done` rows; failed/running/
+    // interrupted rows always have it null, which is why this only needs
+    // to look at the most recent *done* run.
     if let Some(last_done) = crate::store::runs::most_recent_done_for_task(conn, &schedule.id)
         .map_err(|e| e.to_string())?
         && let Some(recheck_after_str) = &last_done.recheck_after
@@ -169,10 +170,11 @@ fn process_one_schedule(
         return Ok(false);
     }
 
-    // AC-05/AC-06: trigger through the same pipeline `runner run` uses —
-    // continuation lookup, then the injected trigger action.
-    let continuation = crate::lookup::lookup(conn, &schedule.id).map_err(|e| e.to_string())?;
-    let prompt = crate::signal::build_prompt(&schedule.task, continuation.context_line.as_deref());
+    // Trigger through the same pipeline `runner run` uses — continuation
+    // lookup, then the injected trigger action.
+    let continuation = crate::persist::lookup(conn, &schedule.id).map_err(|e| e.to_string())?;
+    let prompt =
+        crate::claude::signal::build_prompt(&schedule.task, continuation.context_line.as_deref());
 
     let trigger_result = trigger(
         &schedule.id,
@@ -184,7 +186,7 @@ fn process_one_schedule(
         tracing::warn!(schedule_id = %schedule.id, "cron: triggered run failed: {e}");
     }
 
-    // AC-05: last_run_at updates regardless of the run's outcome.
+    // last_run_at updates regardless of the run's outcome.
     schedules::update_last_run_at(conn, &schedule.id, &now.to_rfc3339())
         .map_err(|e| e.to_string())?;
 
@@ -240,7 +242,7 @@ mod tests {
     fn parse_produces_a_schedule_that_computes_upcoming_fire_times() {
         let schedule = parse("0 12 * * *").unwrap();
         // Just confirm it's genuinely usable, not just "didn't error" —
-        // computing an upcoming time is what F-14 will actually need.
+        // the tick engine needs to compute upcoming fire times from it.
         assert!(schedule.upcoming(chrono::Utc).next().is_some());
     }
 
@@ -271,8 +273,8 @@ mod tests {
 
     mod tick_tests {
         use super::*;
+        use crate::claude::signal::ContinuationSignal;
         use crate::retry::RunOutcome;
-        use crate::signal::ContinuationSignal;
         use crate::store::runs::{self, NewRun};
         use crate::store::schedules::NewSchedule;
         use std::cell::Cell;
@@ -301,7 +303,7 @@ mod tests {
 
         fn ok_outcome() -> RunOutcome {
             RunOutcome {
-                result: crate::process::ClaudeResult {
+                result: crate::claude::process::ClaudeResult {
                     result: "done".to_string(),
                     session_id: Some("sess".to_string()),
                     cost_usd: 0.0,

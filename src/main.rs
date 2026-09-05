@@ -2,18 +2,15 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
+mod claude;
 mod cli;
 mod config;
 mod cron_engine;
 mod daemon;
-mod lookup;
 mod paths;
 mod persist;
 mod pid;
-mod preflight;
-mod process;
 mod retry;
-mod signal;
 mod store;
 
 #[derive(Parser)]

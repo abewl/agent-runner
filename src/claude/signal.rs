@@ -1,11 +1,11 @@
-//! Continuation signal — prompt trailer convention + parsing (F-05).
+//! Continuation signal — prompt trailer convention + parsing.
 //!
 //! Every prompt Runner sends carries the identical fixed trailer
-//! instruction below — one template, no PM-mode/Engineer-mode variants
-//! (SPEC.md AC-01). `next_action`/`reason` are opaque to Runner: stored,
-//! displayed, and handed back as context on the next invocation — never
-//! branched on in code anywhere in this crate (SPEC.md AC-05; see
-//! `PROJECT.md` §4 and `DICT.md`'s continuation-signal section for why).
+//! instruction below — one template, no PM-mode/Engineer-mode variants.
+//! `next_action`/`reason` are opaque to Runner: stored, displayed, and
+//! handed back as context on the next invocation — never branched on in
+//! code anywhere in this crate. Runner relays the signal, it never
+//! interprets it; see `PROJECT.md` §4 for why.
 
 use std::time::Duration;
 
@@ -22,8 +22,8 @@ pub struct ContinuationSignal {
 pub struct SignalParseError;
 
 /// Builds the full prompt sent to `claude`: an optional continuation
-/// context line (from F-09's lookup — "your own last recommendation
-/// was..."), then the caller's task text, then the fixed trailer
+/// context line ("your own last recommendation was..."), then the
+/// caller's task text, then the fixed trailer
 /// instruction. The same shape for every caller — `runner run` and the
 /// cron tick engine construct prompts identically; there is no branch
 /// anywhere on whether this is a "manual" or "scheduled" invocation.
@@ -40,9 +40,9 @@ pub fn build_prompt(task: &str, context: Option<&str>) -> String {
 
 /// Parses the fixed `NEXT_ACTION:`/`RECHECK_AFTER:` trailer lines out of
 /// `claude`'s result text. A missing `NEXT_ACTION:` line is malformed
-/// output — `Err`, not silently treated as "no signal" — this feeds into
-/// F-06's retry-on-malformed-output path, the same bucket as unparseable
-/// JSON from F-04.
+/// output — `Err`, not silently treated as "no signal" — so it feeds into
+/// the same retry-on-malformed-output path as unparseable JSON from the
+/// subprocess itself.
 pub fn parse_continuation_signal(
     result_text: &str,
 ) -> Result<ContinuationSignal, SignalParseError> {
@@ -73,12 +73,12 @@ pub fn parse_continuation_signal(
 
 /// Removes the `NEXT_ACTION:`/`RECHECK_AFTER:` trailer lines from a
 /// result's text, for display or storage contexts that show the parsed
-/// signal separately (F-10's stdout, F-12's stored `result_text`) and
-/// would otherwise show the trailer twice — once verbatim in the raw
-/// text, once from the separately-parsed fields. `parse_continuation_signal`
-/// itself never strips (that's not its job, and the field data still needs
-/// the original text) — this is the one place that does, so both
-/// consumers show identical, clean text rather than each hand-rolling it.
+/// signal separately and would otherwise show the trailer twice — once
+/// verbatim in the raw text, once from the separately-parsed fields.
+/// `parse_continuation_signal` itself never strips (that's not its job,
+/// and the field data still needs the original text) — this is the one
+/// place that does, so every consumer shows identical, clean text rather
+/// than each hand-rolling it.
 pub fn strip_trailer(text: &str) -> String {
     text.lines()
         .filter(|line| {
@@ -96,7 +96,7 @@ pub fn strip_trailer(text: &str) -> String {
 /// reproduction variance, and finally to "whole thing is the label, empty
 /// reason" if neither is present rather than failing the whole parse over
 /// a missing separator — the label (`NEXT_ACTION`'s presence at all) is
-/// the part that actually matters for AC-02; the reason is display text.
+/// what actually matters; the reason is display text.
 fn split_label_and_reason(rest: &str) -> (String, String) {
     for sep in ["—", " - "] {
         if let Some((label, why)) = rest.split_once(sep) {
@@ -106,8 +106,7 @@ fn split_label_and_reason(rest: &str) -> (String, String) {
     (rest.to_string(), String::new())
 }
 
-/// Minimal duration parser: digits followed by exactly one of `m`/`h`/`d`
-/// (SPEC.md AC-03's minimum unit set).
+/// Minimal duration parser: digits followed by exactly one of `m`/`h`/`d`.
 fn parse_duration(s: &str) -> Option<Duration> {
     if s.is_empty() || s.len() < 2 {
         return None;

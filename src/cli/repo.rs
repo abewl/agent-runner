@@ -1,4 +1,4 @@
-//! `runner repo set|show` command implementations (F-02).
+//! `runner repo set|show` command implementations.
 
 use std::path::Path;
 

@@ -1,5 +1,5 @@
 //! The daemon process body — what actually runs once `runner daemon start`
-//! has detached (F-01). Installs signal handlers, spawns the `caffeinate`
+//! has detached. Installs signal handlers, spawns the `caffeinate`
 //! sleep-prevention child, waits for shutdown, cleans up.
 //!
 //! Must only be entered *after* `daemonize::Daemonize::start()` has
@@ -46,9 +46,9 @@ async fn async_main() {
 
     spawn_caffeinate();
 
-    // The daemon's only responsibility in Stage 1 beyond staying alive
-    // (F-14) — runs concurrently with the shutdown wait below, not
-    // inside it; nothing here blocks signal handling.
+    // The daemon's only responsibility beyond staying alive — runs
+    // concurrently with the shutdown wait below, not inside it; nothing
+    // here blocks signal handling.
     tokio::spawn(crate::cron_engine::run_tick_loop());
 
     tokio::select! {
@@ -70,8 +70,7 @@ fn write_pid_file() -> std::io::Result<()> {
 
 /// Sends daemon log output through `tracing` to a real file under
 /// `$RUNNER_HOME/logs/`, independent of stdio redirection, so logs remain
-/// inspectable regardless of how stdout/stderr ended up wired (SPEC.md F-01
-/// AC-07).
+/// inspectable regardless of how stdout/stderr ended up wired.
 fn init_logging() {
     match OpenOptions::new()
         .create(true)
@@ -96,7 +95,7 @@ fn init_logging() {
 /// Spawns `caffeinate -s -w <own-pid>` so the machine cannot sleep for as
 /// long as the daemon is alive. Fire-and-forget: not tracked, not waited
 /// on, never explicitly killed — `-w <pid>` ties its lifetime to ours
-/// automatically, on a clean stop or a crash alike (SPEC.md F-01 AC-08/09).
+/// automatically, on a clean stop or a crash alike.
 fn spawn_caffeinate() {
     let pid = std::process::id().to_string();
     match std::process::Command::new("caffeinate")

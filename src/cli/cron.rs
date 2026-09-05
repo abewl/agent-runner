@@ -1,4 +1,4 @@
-//! `runner cron add|list|remove` command implementations (F-13).
+//! `runner cron add|list|remove` command implementations.
 
 use chrono::Utc;
 use uuid::Uuid;
@@ -11,7 +11,7 @@ const TASK_TRUNCATE_LEN: usize = 40;
 
 pub fn add(cron_expr: &str, task: &str) -> Result<(), String> {
     // Validated before anything is written — an invalid expression must
-    // leave no row inserted (SPEC.md AC-01).
+    // leave no row inserted.
     cron_engine::validate(cron_expr)?;
 
     let conn = crate::store::open().map_err(|e| e.to_string())?;
