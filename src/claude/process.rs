@@ -86,6 +86,17 @@ fn run_with(
 ) -> Result<ClaudeResult, ClaudeError> {
     let mut cmd = Command::new(bin);
     cmd.arg("--print").arg("--output-format").arg("json");
+    // Without a permission flag, non-interactive claude blocks on any file
+    // write/edit — there's no TTY to answer a permission prompt through,
+    // so the call would otherwise fail on any task beyond read-only work.
+    // `acceptEdits` covers the core capability Runner needs; deliberately
+    // not `--dangerously-skip-permissions`/`bypassPermissions`, which
+    // Anthropic's own docs recommend only for sandboxes with no internet
+    // access — this runs on the user's real machine, not an isolated one.
+    // A target repo can still layer its own `.claude/settings.json` for
+    // finer-grained tool permissions; claude already reads settings from
+    // its working directory, and this doesn't override that.
+    cmd.arg("--permission-mode").arg("acceptEdits");
     if let Some(session_id) = resume {
         cmd.arg("--resume").arg(session_id);
     }
@@ -394,6 +405,18 @@ mod tests {
         assert!(result.result.contains("--output-format"));
         assert!(result.result.contains("json"));
         assert!(result.result.contains("hello there"));
+    }
+
+    #[test]
+    fn run_with_always_passes_permission_mode_accept_edits() {
+        let script = fake_script(
+            "args-permission",
+            r#"echo "[{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"$*\",\"cost_usd\":0}]""#,
+        );
+        let cwd = temp_dir("args-permission-cwd");
+        let result = run_with(script.to_str().unwrap(), "task", None, &cwd).unwrap();
+        assert!(result.result.contains("--permission-mode"));
+        assert!(result.result.contains("acceptEdits"));
     }
 
     #[test]

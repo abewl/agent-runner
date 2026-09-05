@@ -116,6 +116,7 @@ mod tests {
                 next_action: "idle".to_string(),
                 reason: String::new(),
                 recheck_after: None,
+                chain_continue: false,
             },
         )
     }

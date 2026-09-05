@@ -149,6 +149,145 @@ fn run_and_persist_using(
     }
 }
 
+/// Hard cap on how many turns a single `run_chain` call will fire —
+/// a resource guard, not a judgment about the task's content, in the
+/// same spirit as `retry`'s bounded single retry. Not yet configurable;
+/// raise this (or add a flag) if a real chain needs more.
+pub const DEFAULT_CHAIN_MAX_TURNS: usize = 10;
+
+/// Runs `task` as a self-chaining sequence of turns: after each one, unless
+/// the agent's `chain_continue` signal is `true`, the chain stops. Each
+/// turn re-runs the exact same `lookup` → `build_prompt` → `run_and_persist`
+/// cycle a single manual `runner run` already does — the turn just
+/// completed is already `done` in the store by the time the next
+/// iteration's `lookup` runs, so session/context continuity falls out of
+/// the existing resume machinery for free, with no in-memory threading
+/// needed between iterations. `on_turn` is called once per completed turn
+/// (before checking whether to continue), so a caller can stream progress
+/// rather than waiting for the whole chain to finish.
+///
+/// Why a chain stopped — returned explicitly rather than left for the
+/// caller to infer from `outcomes.len()`/the last outcome's fields, since
+/// two different reasons (stuck, and reaching `max_turns`) can otherwise
+/// produce the exact same `(len, chain_continue)` shape when a stuck-stop
+/// happens to land on the final allowed turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChainStopReason {
+    /// The agent reported `CHAIN_CONTINUE: no` (or it was missing/
+    /// unparseable, which defaults to the same thing) — a clean stop.
+    AgentDone,
+    /// The same `next_action` label repeated `STUCK_REPEAT_THRESHOLD`
+    /// times in a row while the agent still said `chain_continue: yes`.
+    Stuck,
+    /// `max_turns` was reached while the agent still said
+    /// `chain_continue: yes` and no stuck-repeat had triggered yet.
+    MaxTurnsReached,
+}
+
+/// A hard failure on any turn propagates immediately via `?`, aborting
+/// the rest of the chain rather than continuing past it. Runs `task` as a
+/// self-chaining sequence of turns: after each one, unless the agent's
+/// `chain_continue` signal is `true`, the chain stops. Each turn re-runs
+/// the exact same `lookup` → `build_prompt` → `run_and_persist` cycle a
+/// single manual `runner run` already does — the turn just completed is
+/// already `done` in the store by the time the next iteration's `lookup`
+/// runs, so session/context continuity falls out of the existing resume
+/// machinery for free, with no in-memory threading needed between
+/// iterations. `on_turn` is called once per completed turn (before
+/// checking whether to continue), so a caller can stream progress rather
+/// than waiting for the whole chain to finish.
+pub fn run_chain(
+    conn: &Connection,
+    task_identity: &str,
+    task: &str,
+    cwd: &Path,
+    max_turns: usize,
+    on_turn: impl FnMut(&RunOutcome),
+) -> Result<(Vec<RunOutcome>, ChainStopReason), PersistedRunError> {
+    let cwd = cwd.to_path_buf();
+    run_chain_using(
+        conn,
+        task_identity,
+        task,
+        max_turns,
+        on_turn,
+        move |prompt, resume| retry::run_with_retry(prompt, resume, &cwd),
+    )
+}
+
+/// The actual chain-loop wiring, parameterized on the attempt itself —
+/// mirrors `run_and_persist`/`run_and_persist_using`'s own split, so the
+/// looping/stopping logic is testable with a canned sequence of
+/// `Ok`/`Err` outcomes instead of a real claude call.
+fn run_chain_using(
+    conn: &Connection,
+    task_identity: &str,
+    task: &str,
+    max_turns: usize,
+    mut on_turn: impl FnMut(&RunOutcome),
+    mut attempt: impl FnMut(&str, Option<&str>) -> Result<RunOutcome, RetryExhausted>,
+) -> Result<(Vec<RunOutcome>, ChainStopReason), PersistedRunError> {
+    let mut outcomes = Vec::new();
+
+    for _ in 0..max_turns {
+        let continuation = lookup(conn, task_identity)?;
+        let prompt =
+            crate::claude::signal::build_prompt(task, continuation.context_line.as_deref());
+        let resume = continuation.session_id.clone();
+
+        let outcome = run_and_persist_using(conn, task_identity, task, || {
+            attempt(&prompt, resume.as_deref())
+        })?;
+
+        on_turn(&outcome);
+        let should_continue = outcome.signal.chain_continue;
+        outcomes.push(outcome);
+
+        if !should_continue {
+            return Ok((outcomes, ChainStopReason::AgentDone));
+        }
+
+        if is_stuck(&outcomes) {
+            tracing::warn!(
+                task_identity,
+                threshold = STUCK_REPEAT_THRESHOLD,
+                "chain: stopping early, next_action repeated with no progress"
+            );
+            return Ok((outcomes, ChainStopReason::Stuck));
+        }
+    }
+
+    tracing::warn!(
+        task_identity,
+        max_turns,
+        "chain: reached max-turn cap while the agent still requested to continue"
+    );
+    Ok((outcomes, ChainStopReason::MaxTurnsReached))
+}
+
+/// How many consecutive identical `next_action` labels count as "stuck."
+/// Deliberately small — three real, back-to-back repeats is already a
+/// strong, low-false-positive signal that no progress is being made, and
+/// a low threshold caps the real cost of a genuinely stuck chain quickly
+/// rather than waiting for `max_turns`.
+pub const STUCK_REPEAT_THRESHOLD: usize = 3;
+
+/// True once the last `STUCK_REPEAT_THRESHOLD` outcomes all report the
+/// exact same `next_action` *label* — a plain string-equality check,
+/// never an interpretation of what the label means. Compares the label
+/// only, not the `reason` text: a genuinely stuck agent's reason can
+/// still drift wording turn to turn ("blocked on X" / "still blocked on
+/// X" / "awaiting X") even while making zero real progress, so comparing
+/// the full text would miss exactly the case this exists to catch.
+fn is_stuck(outcomes: &[RunOutcome]) -> bool {
+    if outcomes.len() < STUCK_REPEAT_THRESHOLD {
+        return false;
+    }
+    let last_n = &outcomes[outcomes.len() - STUCK_REPEAT_THRESHOLD..];
+    let first_label = &last_n[0].signal.next_action;
+    last_n.iter().all(|o| &o.signal.next_action == first_label)
+}
+
 /// Reconciles any `runs` row still `status = running` whose owning
 /// process is confirmed not alive to `status = interrupted` — startup-time
 /// cleanup, never automatic resumption. Deliberately does *not* assume
@@ -382,6 +521,7 @@ mod tests {
                 next_action: next_action.to_string(),
                 reason: "because".to_string(),
                 recheck_after,
+                chain_continue: false,
             },
             retried: false,
         }
@@ -428,6 +568,7 @@ mod tests {
                     next_action: "idle".to_string(),
                     reason: "done".to_string(),
                     recheck_after: Some(Duration::from_secs(1800)),
+                    chain_continue: false,
                 },
                 retried: false,
             })
@@ -528,5 +669,287 @@ mod tests {
     fn reconcile_is_a_noop_when_nothing_is_running() {
         let conn = open_in_memory();
         assert_eq!(reconcile_interrupted_runs(&conn).unwrap(), 0);
+    }
+
+    // --- run_chain ---
+
+    use crate::claude::signal::SignalParseError;
+    use std::cell::{Cell, RefCell};
+
+    fn chain_outcome(chain_continue: bool) -> RunOutcome {
+        chain_outcome_labeled("continue_engineer", chain_continue)
+    }
+
+    fn chain_outcome_labeled(next_action: &str, chain_continue: bool) -> RunOutcome {
+        RunOutcome {
+            result: ClaudeResult {
+                result: "turn result".to_string(),
+                session_id: Some("sess-chain".to_string()),
+                cost_usd: 0.01,
+            },
+            signal: ContinuationSignal {
+                next_action: next_action.to_string(),
+                reason: "more to do".to_string(),
+                recheck_after: None,
+                chain_continue,
+            },
+            retried: false,
+        }
+    }
+
+    #[test]
+    fn chain_stops_after_one_turn_when_chain_continue_is_false() {
+        let conn = open_in_memory();
+        let calls = Cell::new(0);
+        let (outcomes, reason) = run_chain_using(
+            &conn,
+            "t",
+            "task",
+            20,
+            |_| {},
+            |_, _| {
+                calls.set(calls.get() + 1);
+                Ok(chain_outcome(false))
+            },
+        )
+        .unwrap();
+
+        assert_eq!(calls.get(), 1, "must not attempt a second turn");
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(reason, ChainStopReason::AgentDone);
+        assert_eq!(runs::list(&conn, 10).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn chain_continues_across_multiple_turns_then_stops() {
+        let conn = open_in_memory();
+        let calls = Cell::new(0);
+        let (outcomes, reason) = run_chain_using(
+            &conn,
+            "t",
+            "task",
+            20,
+            |_| {},
+            |_, _| {
+                let n = calls.get() + 1;
+                calls.set(n);
+                // Distinct labels per turn so this exercises the "agent
+                // says stop" path, not an accidental stuck-repeat trigger.
+                Ok(chain_outcome_labeled(&format!("step-{n}"), n < 3))
+            },
+        )
+        .unwrap();
+
+        assert_eq!(calls.get(), 3);
+        assert_eq!(outcomes.len(), 3);
+        assert_eq!(reason, ChainStopReason::AgentDone);
+        assert!(
+            !outcomes.last().unwrap().signal.chain_continue,
+            "the last turn is the one that reported done"
+        );
+        assert_eq!(
+            runs::list(&conn, 10).unwrap().len(),
+            3,
+            "each turn is its own row"
+        );
+    }
+
+    #[test]
+    fn chain_stops_at_max_turns_cap_when_agent_keeps_requesting_continue() {
+        let conn = open_in_memory();
+        let calls = Cell::new(0);
+        let (outcomes, reason) = run_chain_using(
+            &conn,
+            "t",
+            "task",
+            3,
+            |_| {},
+            |_, _| {
+                let n = calls.get() + 1;
+                calls.set(n);
+                // Distinct labels per turn so the cap is what actually ends
+                // this chain, not the stuck-detector (which would otherwise
+                // trigger on turn 3 too, since 3 is also its threshold).
+                Ok(chain_outcome_labeled(&format!("step-{n}"), true))
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            outcomes.len(),
+            3,
+            "capped at max_turns even though chain_continue stayed true"
+        );
+        assert_eq!(reason, ChainStopReason::MaxTurnsReached);
+        assert!(outcomes.last().unwrap().signal.chain_continue);
+    }
+
+    #[test]
+    fn chain_stops_early_when_stuck_before_reaching_max_turns() {
+        let conn = open_in_memory();
+        let calls = Cell::new(0);
+        // max_turns is well above the stuck threshold, so a stop at
+        // exactly STUCK_REPEAT_THRESHOLD turns can only be the
+        // stuck-detector, not the cap.
+        let (outcomes, reason) = run_chain_using(
+            &conn,
+            "t",
+            "task",
+            10,
+            |_| {},
+            |_, _| {
+                calls.set(calls.get() + 1);
+                Ok(chain_outcome_labeled("same_label_every_time", true))
+            },
+        )
+        .unwrap();
+
+        assert_eq!(calls.get(), STUCK_REPEAT_THRESHOLD);
+        assert_eq!(outcomes.len(), STUCK_REPEAT_THRESHOLD);
+        assert_eq!(reason, ChainStopReason::Stuck);
+        assert!(
+            outcomes.last().unwrap().signal.chain_continue,
+            "the agent never said stop — the repeat-detector ended this, not a clean stop"
+        );
+    }
+
+    #[test]
+    fn chain_does_not_false_positive_on_fewer_than_threshold_repeats() {
+        let conn = open_in_memory();
+        let calls = Cell::new(0);
+        // Same label twice (one less than STUCK_REPEAT_THRESHOLD), then a
+        // clean stop — must not be mistaken for stuck.
+        let (outcomes, reason) = run_chain_using(
+            &conn,
+            "t",
+            "task",
+            10,
+            |_| {},
+            |_, _| {
+                let n = calls.get() + 1;
+                calls.set(n);
+                Ok(chain_outcome_labeled("same_label", n < 3))
+            },
+        )
+        .unwrap();
+
+        assert_eq!(outcomes.len(), 3);
+        assert_eq!(reason, ChainStopReason::AgentDone);
+    }
+
+    #[test]
+    fn chain_aborts_entirely_on_a_hard_failure_mid_chain() {
+        let conn = open_in_memory();
+        let calls = Cell::new(0);
+        let err = run_chain_using(
+            &conn,
+            "t",
+            "task",
+            20,
+            |_| {},
+            |_, _| {
+                let n = calls.get() + 1;
+                calls.set(n);
+                if n == 2 {
+                    Err(RetryExhausted {
+                        first: retry::RunFailure::SignalParse(SignalParseError),
+                        second: retry::RunFailure::SignalParse(SignalParseError),
+                    })
+                } else {
+                    Ok(chain_outcome(true))
+                }
+            },
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, PersistedRunError::Retry(_)));
+        assert_eq!(
+            calls.get(),
+            2,
+            "must not attempt a third turn after the second failed"
+        );
+
+        let rows = runs::list(&conn, 10).unwrap();
+        assert_eq!(
+            rows.len(),
+            2,
+            "the failed turn is still its own persisted row"
+        );
+        assert_eq!(
+            rows.iter().filter(|r| r.status == RunStatus::Done).count(),
+            1
+        );
+        assert_eq!(
+            rows.iter()
+                .filter(|r| r.status == RunStatus::Failed)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn on_turn_callback_fires_once_per_completed_turn() {
+        let conn = open_in_memory();
+        let seen = RefCell::new(Vec::new());
+        run_chain_using(
+            &conn,
+            "t",
+            "task",
+            20,
+            |outcome| seen.borrow_mut().push(outcome.signal.chain_continue),
+            |_, _| {
+                let n = seen.borrow().len();
+                Ok(chain_outcome(n < 2))
+            },
+        )
+        .unwrap();
+
+        assert_eq!(*seen.borrow(), vec![true, true, false]);
+    }
+
+    #[test]
+    fn chain_resumes_the_previous_turns_session_on_each_later_turn() {
+        let conn = open_in_memory();
+        let resumes_seen = RefCell::new(Vec::new());
+        let mut turn = 0;
+        run_chain_using(
+            &conn,
+            "t",
+            "task",
+            20,
+            |_| {},
+            |_, resume| {
+                resumes_seen.borrow_mut().push(resume.map(String::from));
+                turn += 1;
+                Ok(RunOutcome {
+                    result: ClaudeResult {
+                        result: "text".to_string(),
+                        session_id: Some(format!("sess-{turn}")),
+                        cost_usd: 0.0,
+                    },
+                    signal: ContinuationSignal {
+                        next_action: "continue_engineer".to_string(),
+                        reason: String::new(),
+                        recheck_after: None,
+                        chain_continue: turn < 3,
+                    },
+                    retried: false,
+                })
+            },
+        )
+        .unwrap();
+
+        let resumes = resumes_seen.borrow();
+        assert_eq!(resumes[0], None, "first turn has no prior session");
+        assert_eq!(
+            resumes[1],
+            Some("sess-1".to_string()),
+            "second turn resumes the first turn's session"
+        );
+        assert_eq!(
+            resumes[2],
+            Some("sess-2".to_string()),
+            "third turn resumes the second turn's session"
+        );
     }
 }

@@ -52,8 +52,8 @@ Epics are the layer between `PROJECT.md` (the requirements) and `FEATURE.md` (th
 - Features: F-15
 - Depends on: E-02 (reads the store), E-03 (mirrors the data CLI commands already expose)
 
-## E-06: Self-Chaining Execution [2026-09-05]
-- Status: [~] in progress
+## E-06: Self-Chaining Execution [2026-09-05] [2026-09-06]
+- Status: [x] done
 - Objective: Stage 1 Batch 1 (E-01–E-05) treated "one `runner run` invocation" and "one `claude` turn" as the same unit — a scoping refinement, not a reversal: a human-triggered task and a single turn aren't the same thing, and this epic lets `runner run` chain a task across multiple turns (PM scopes, Engineer implements, PM reviews, ...) until the agent itself signals it's done, without a human re-invoking the CLI after every turn. Driven entirely by a new, explicit, content-blind trailer field (`CHAIN_CONTINUE`) — never a reinterpretation of `next_action`'s content, and never a repurposing of `recheck_after`, which keeps its existing cron-only meaning. Bounded by a hard iteration cap (10 by default) and an early stuck-detector (3 identical consecutive `next_action` labels). Also fixes a real, pre-existing gap found during this epic's own manual verification: every `claude` invocation now includes `--permission-mode acceptEdits`, since non-interactive `claude` otherwise blocks on any file write/edit, chained or not. Cron's own cadence/recheck-gating rules are unaffected — this epic only changes what a single, human-triggered `runner run` does; the daemon's tick loop is untouched.
 - Features: F-16
 - Depends on: E-01 (extends the run pipeline), E-02 (chain links are ordinary `runs` rows sharing one `task_identity` — no new store schema), E-03 (`runner run` is the command being extended)

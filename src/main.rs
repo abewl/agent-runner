@@ -30,8 +30,14 @@ enum Commands {
     /// Show or set the configured target repo (setting requires
     /// agent_docs/AGENT.md at the path)
     Repo { path: Option<PathBuf> },
-    /// Run a task now, synchronously, against the configured repo
-    Run { task: String },
+    /// Run a task now, chaining turns (PM scopes, Engineer implements, ...)
+    /// until the agent reports it's done
+    Run {
+        task: String,
+        /// Perform exactly one turn instead of chaining
+        #[arg(long)]
+        once: bool,
+    },
     /// Show recent runs (alias: ps)
     #[command(alias = "ps")]
     Status {
@@ -86,7 +92,7 @@ fn main() {
             Some(path) => cli::repo::set(&path),
             None => cli::repo::show(),
         },
-        Commands::Run { task } => cli::run::run(&task),
+        Commands::Run { task, once } => cli::run::run(&task, once),
         Commands::Status { running } => cli::status::status(running),
         Commands::Logs { run_id } => match run_id {
             Some(id) => cli::logs::logs(&id),
