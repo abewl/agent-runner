@@ -1,24 +1,24 @@
-//! Integration tests for `runner repo set|show` and `runner daemon start
+//! Integration tests for `runner repo [path]` and `runner daemon start
 //! --repo` (F-02), driving the compiled binary.
 
 mod common;
 
 use common::*;
 
-// --- AC-04: `repo show` before anything is configured ---
+// --- AC-04: `runner repo` (no path) before anything is configured ---
 #[test]
 fn repo_show_reports_none_when_unset() {
     let home = unique_runner_home("repo-show-unset");
 
     let output = runner_cmd(&home)
-        .args(["repo", "show"])
+        .args(["repo"])
         .output()
-        .expect("failed to run `runner repo show`");
+        .expect("failed to run `runner repo`");
 
     assert!(output.status.success());
     assert!(
         String::from_utf8_lossy(&output.stdout)
-            .contains("no repo configured — run `runner repo set <path>`")
+            .contains("no repo configured — run `runner repo <path>`")
     );
 }
 
@@ -29,9 +29,9 @@ fn repo_set_rejects_nonexistent_path() {
     let bad_path = home.join("does-not-exist");
 
     let output = runner_cmd(&home)
-        .args(["repo", "set", bad_path.to_str().unwrap()])
+        .args(["repo", bad_path.to_str().unwrap()])
         .output()
-        .expect("failed to run `runner repo set`");
+        .expect("failed to run `runner repo <path>`");
 
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("does not exist"));
@@ -49,9 +49,9 @@ fn repo_set_rejects_path_without_agent_docs() {
     std::fs::create_dir_all(&plain_dir).unwrap();
 
     let output = runner_cmd(&home)
-        .args(["repo", "set", plain_dir.to_str().unwrap()])
+        .args(["repo", plain_dir.to_str().unwrap()])
         .output()
-        .expect("failed to run `runner repo set`");
+        .expect("failed to run `runner repo <path>`");
 
     assert!(!output.status.success());
     assert!(
@@ -62,16 +62,16 @@ fn repo_set_rejects_path_without_agent_docs() {
     assert!(!home.join("config.toml").exists());
 }
 
-// --- AC-02: a valid repo is set and reflected by `repo show` ---
+// --- AC-02: a valid repo is set and reflected by `runner repo` (no path) ---
 #[test]
 fn repo_set_succeeds_and_show_reflects_it() {
     let home = unique_runner_home("repo-set-valid");
     let repo = valid_target_repo("set-valid-target");
 
     let set_output = runner_cmd(&home)
-        .args(["repo", "set", repo.to_str().unwrap()])
+        .args(["repo", repo.to_str().unwrap()])
         .output()
-        .expect("failed to run `runner repo set`");
+        .expect("failed to run `runner repo <path>`");
     assert!(set_output.status.success());
 
     let canonical = repo.canonicalize().unwrap();
@@ -81,9 +81,9 @@ fn repo_set_succeeds_and_show_reflects_it() {
     );
 
     let show_output = runner_cmd(&home)
-        .args(["repo", "show"])
+        .args(["repo"])
         .output()
-        .expect("failed to run `runner repo show`");
+        .expect("failed to run `runner repo`");
     assert!(show_output.status.success());
     assert_eq!(
         String::from_utf8_lossy(&show_output.stdout).trim(),
@@ -99,18 +99,18 @@ fn repo_set_overwrites_previous_value() {
     let second = valid_target_repo("overwrite-second");
 
     runner_cmd(&home)
-        .args(["repo", "set", first.to_str().unwrap()])
+        .args(["repo", first.to_str().unwrap()])
         .status()
-        .expect("failed to run first `runner repo set`");
+        .expect("failed to run first `runner repo <path>`");
     runner_cmd(&home)
-        .args(["repo", "set", second.to_str().unwrap()])
+        .args(["repo", second.to_str().unwrap()])
         .status()
-        .expect("failed to run second `runner repo set`");
+        .expect("failed to run second `runner repo <path>`");
 
     let show_output = runner_cmd(&home)
-        .args(["repo", "show"])
+        .args(["repo"])
         .output()
-        .expect("failed to run `runner repo show`");
+        .expect("failed to run `runner repo`");
 
     let canonical_second = second.canonicalize().unwrap();
     assert_eq!(
@@ -155,14 +155,14 @@ fn daemon_start_with_valid_repo_starts_and_sets_config() {
     let _pid = wait_for_pid_file(&home);
 
     let show_output = runner_cmd(&home)
-        .args(["repo", "show"])
+        .args(["repo"])
         .output()
-        .expect("failed to run `runner repo show`");
+        .expect("failed to run `runner repo`");
     let canonical = repo.canonicalize().unwrap();
     assert_eq!(
         String::from_utf8_lossy(&show_output.stdout).trim(),
         canonical.to_str().unwrap(),
-        "starting with --repo should persist it, same as `runner repo set` would"
+        "starting with --repo should persist it, same as `runner repo <path>` would"
     );
 
     force_stop(&home);

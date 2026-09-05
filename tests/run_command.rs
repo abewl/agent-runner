@@ -3,7 +3,7 @@
 //! `claude` binary — deliberately not automated here, consistent with
 //! every prior feature's testing approach in this project (see `DICT.md`
 //! "Why no test invokes the real claude CLI", carried from F-04). Verify
-//! the success path by hand: `runner repo set <a real agent_docs repo>`
+//! the success path by hand: `runner repo <a real agent_docs repo>`
 //! then `runner run "<a real task>"`.
 
 mod common;
@@ -34,9 +34,9 @@ fn run_fails_when_claude_not_on_path() {
     let repo = valid_target_repo("run-no-claude-target");
 
     let set_status = runner_cmd(&home)
-        .args(["repo", "set", repo.to_str().unwrap()])
+        .args(["repo", repo.to_str().unwrap()])
         .status()
-        .expect("failed to run `runner repo set`");
+        .expect("failed to run `runner repo <path>`");
     assert!(set_status.success());
 
     // A minimal PATH that (on this dev machine) does not include wherever

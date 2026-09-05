@@ -9,7 +9,7 @@ pub fn run(task: &str) -> Result<(), String> {
     // Cheaper, more obviously-fixable setup error first — no subprocess
     // spawn needed to discover "no repo configured," unlike preflight.
     let cwd = config::repo_path()
-        .ok_or_else(|| "no repo configured — run `runner repo set <path>` first".to_string())?;
+        .ok_or_else(|| "no repo configured — run `runner repo <path>` first".to_string())?;
 
     preflight::check().map_err(|e| e.to_string())?;
 

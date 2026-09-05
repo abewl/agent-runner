@@ -17,10 +17,10 @@ AC items are append-only. Revise in place when behavior changes; never delete hi
 - AC-09: No explicit kill of the `caffeinate` child is issued by `daemon stop` or by crash-cleanup — `-w <pid>` already ties its lifetime to the daemon's PID, so it self-terminates on any daemon exit, clean or not. A test verifying `daemon stop` leaves no orphaned `caffeinate` process for that instance is sufficient; no new termination code path should be added for this.
 
 ## Target Repo Configuration (F-02)
-- AC-01: `runner repo set <path>` fails clearly (non-zero exit, no config written) if `<path>` does not exist, is not a directory, or does not contain `agent_docs/AGENT.md`.
-- AC-02: On success, `runner repo set <path>` writes the **canonicalized, absolute** path to `$RUNNER_HOME/config.toml` under a `repo_path` key, overwriting any previously configured value.
-- AC-03: `runner daemon start --repo <path>` performs the same validation and write as `runner repo set <path>` before proceeding to daemon startup; a validation failure prevents the daemon from starting.
-- AC-04: `runner repo show` prints the currently configured absolute path, or a clear "no repo configured — run `runner repo set <path>`" message if none is set (distinguishing this from any other error state).
+- AC-01: `runner repo <path>` fails clearly (non-zero exit, no config written) if `<path>` does not exist, is not a directory, or does not contain `agent_docs/AGENT.md`.
+- AC-02: On success, `runner repo <path>` writes the **canonicalized, absolute** path to `$RUNNER_HOME/config.toml` under a `repo_path` key, overwriting any previously configured value.
+- AC-03: `runner daemon start --repo <path>` performs the same validation and write as `runner repo <path>` before proceeding to daemon startup; a validation failure prevents the daemon from starting.
+- AC-04: `runner repo` (no path) prints the currently configured absolute path, or a clear "no repo configured — run `runner repo <path>`" message if none is set (distinguishing this from any other error state).
 
 ## Local Ambient-Auth Preflight (F-03)
 - AC-01: Before any `claude` subprocess is spawned (manual or scheduled), a preflight check runs that confirms the `claude` binary resolves on `PATH`. If not found, the run fails immediately with a message naming the missing binary — no subprocess spawn is attempted.
@@ -95,7 +95,7 @@ AC items are append-only. Revise in place when behavior changes; never delete hi
 - AC-06: A cron-triggered run, once started, follows the identical persistence and retry behavior (F-06, F-08) as a manually triggered run — no separate code path.
 
 ## TUI Status Dashboard (F-15)
-- AC-01: `runner log` renders a scrollable list of runs (id, task, status, started_at, next_action), most-recent-first, sourced from the same store `runner status` reads.
+- AC-01: `runner logs` (no run id) renders a scrollable list of runs (id, task, status, started_at, next_action), most-recent-first, sourced from the same store `runner status` reads.
 - AC-02: The list refreshes automatically on a fixed 2-second poll interval without requiring user input, and without flickering/full-redraw artifacts on each refresh.
 - AC-03: Selecting a run (arrow keys + enter, or equivalent) shows a detail pane with the same result/error/next_action/reason/recheck_after content `runner logs` would print for that run id.
 - AC-04: No keybinding in this view mutates any run or schedule state (no kill/retry/delete) — confirmed by inspection: no write-path store functions are reachable from the TUI's input handling in this batch.

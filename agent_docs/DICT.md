@@ -32,7 +32,7 @@ src/
     display.rs       — shared formatting (truncate, format_run_detail) used by
                         status/logs/cron/tui
     (repo, run, status, logs, cron)
-    tui/            — `runner log` (ratatui dashboard, read-only)
+    tui/            — `runner logs` with no run id (ratatui dashboard, read-only)
       mod.rs          — terminal setup/render/event-loop
       app.rs          — pure, terminal-free state (App, handle_key)
   config.rs         — target-repo config file (read/write $RUNNER_HOME/config.toml)
@@ -207,9 +207,9 @@ No store-mutating function (anything in `store/runs.rs` or `store/schedules.rs` 
 
 ## Manually smoke-testing a raw-mode terminal app non-interactively (F-15)
 
-`runner log` (`ratatui` + `crossterm`, alternate screen + raw mode) can't be exercised by piping stdin the way every other command's manual verification has been — a plain `printf 'q' | runner log` doesn't give it a real pty at all, and `expect`, which does allocate one, defaults that pty to a **0x0 window** when `expect` itself has no controlling terminal (true here — this project's manual verification runs inside a non-interactive tool shell, not a real terminal session). A 0x0 `Rect` from `frame.area()` makes `ratatui` lay out and draw nothing at all — the process runs, enters/leaves the alternate screen correctly, and exits 0, which *looks* like a clean pass while silently never having rendered a single widget. Caught by checking the raw captured session bytes for actual rendered text (`strings -n 3` on the log), not just checking the exit code — an empty result there is the tell. Fixed by explicitly sizing the pty before the first draw, using Expect's builtin `stty` command against the pty slave device:
+`runner logs` with no run id (`ratatui` + `crossterm`, alternate screen + raw mode) can't be exercised by piping stdin the way every other command's manual verification has been — a plain `printf 'q' | runner logs` doesn't give it a real pty at all, and `expect`, which does allocate one, defaults that pty to a **0x0 window** when `expect` itself has no controlling terminal (true here — this project's manual verification runs inside a non-interactive tool shell, not a real terminal session). A 0x0 `Rect` from `frame.area()` makes `ratatui` lay out and draw nothing at all — the process runs, enters/leaves the alternate screen correctly, and exits 0, which *looks* like a clean pass while silently never having rendered a single widget. Caught by checking the raw captured session bytes for actual rendered text (`strings -n 3` on the log), not just checking the exit code — an empty result there is the tell. Fixed by explicitly sizing the pty before the first draw, using Expect's builtin `stty` command against the pty slave device:
 ```tcl
-spawn $bin log
+spawn $bin logs
 stty rows 40 columns 120 < $spawn_out(slave,name)
 ```
 After that fix, the same session log showed genuine rendered content (row text, reverse-video selection highlight, the detail pane's `next_action`/`next_action_reason` labels) — confirmed with `strings -n 3 session.log | grep <expected row/field text>`. Any future manual verification of a raw-mode/full-screen terminal feature in this project should size the pty this way from the start, rather than rediscovering the 0x0-default gap.

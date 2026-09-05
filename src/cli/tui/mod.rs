@@ -1,8 +1,8 @@
-//! `runner log` — a read-only `ratatui` dashboard over the same store
-//! `runner status`/`runner logs` read. Terminal setup/teardown lives
-//! here; all state and key-handling logic lives in `app` (kept pure and
-//! terminal-free so it's unit-testable without a real terminal — see
-//! `app`'s own doc comment).
+//! `runner logs` with no run id — a read-only `ratatui` dashboard over
+//! the same store `runner status`/`runner logs <id>` read. Terminal
+//! setup/teardown lives here; all state and key-handling logic lives in
+//! `app` (kept pure and terminal-free so it's unit-testable without a
+//! real terminal — see `app`'s own doc comment).
 
 pub mod app;
 

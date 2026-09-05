@@ -1,4 +1,5 @@
-//! `runner repo set|show` command implementations.
+//! `runner repo [path]` command implementation — shows the configured
+//! target repo, or sets it when a path is given.
 
 use std::path::Path;
 
@@ -13,7 +14,7 @@ pub fn set(path: &Path) -> Result<(), String> {
 pub fn show() -> Result<(), String> {
     match config::repo_path() {
         Some(path) => println!("{}", path.display()),
-        None => println!("no repo configured — run `runner repo set <path>`"),
+        None => println!("no repo configured — run `runner repo <path>`"),
     }
     Ok(())
 }
